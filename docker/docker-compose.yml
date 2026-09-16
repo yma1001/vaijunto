@@ -1,0 +1,23 @@
+# Demonstração na MESMA máquina. Em PCs distintos do laboratório
+# use os comandos docker run do README (SERVER_HOST = IP do PC do servidor).
+version: "3.8"
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        BUILD_TARGET: server
+    image: vaijunto-server:local
+    ports:
+      - "5000:5000"
+    environment:
+      SERVER_PORT: "5000"
+      LISTEN_HOST: "0.0.0.0"
+      DATA_PATH: /data/state.json
+    volumes:
+      - vaijunto-data:/data
+    # 0.0.0.0:5000 dentro do container; no host a porta 5000 é publicada.
+
+volumes:
+  vaijunto-data:
