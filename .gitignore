@@ -1,0 +1,11 @@
+bin/
+data/*.json
+data/*.tmp
+*.exe
+.DS_Store
+coverage.out
+vaijunto-server
+vaijunto-driver
+vaijunto-passenger
+vaijunto-loadtest
+
