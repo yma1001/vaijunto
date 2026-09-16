@@ -129,12 +129,6 @@ Fonte: CHAT.md §8, §65
 
 Não prender a `127.0.0.1` na demo multi-máquina. Clientes usam `SERVER_HOST`/`SERVER_PORT` = IP do host do servidor + porta publicada.
 
-## DEC-019 — Relatório SBC em Markdown/LaTeX no repositório
-
-Status: CONFIRMADO (projeto)
-
-Texto em `relatorio/relatorio-sbc.md`, limitado ao conteúdo de 8 páginas. Compilação com o estilo SBC oficial fica a cargo do aluno se o `.sty` da SBC for usado.
-
 ## DEC-020 — Datas brasileiras só na CLI humana
 
 Status: CONFIRMADO (projeto)

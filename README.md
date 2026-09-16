@@ -2,7 +2,7 @@
 
 Sistema de **caronas compartilhadas** (PBL de Redes, Concorrência e Conectividade). Servidor central em Go fala **TCP/IP nativo** com um cliente **motorista** e um cliente **passageiro**. Itinerários podem juntar caronas diferentes. A reserva é **atômica** (tudo ou nada) com concorrência explícita (`goroutine` por conexão + `sync.RWMutex`). Estado em memória + arquivo JSON (sobrevive a reinício e a `docker rm` com volume).
 
-Entrega: 17/09/2026. Relatório SBC: `relatorio/relatorio-sbc.md`.
+Entrega: 17/09/2026.
 
 ## Contas da demo
 
