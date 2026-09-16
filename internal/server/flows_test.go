@@ -6,6 +6,7 @@ import (
 
 	"github.com/yma1001/vaijunto/internal/client"
 	"github.com/yma1001/vaijunto/internal/protocol"
+	"github.com/yma1001/vaijunto/internal/store"
 )
 
 func TestSearchDoesNotReserve(t *testing.T) {
@@ -74,6 +75,42 @@ func TestCompositeSearchAndConfirmTCP(t *testing.T) {
 	}
 	if len(pass.Segments) == 0 || len(pass.Segments[0].Passengers) != 1 {
 		t.Fatalf("driver should see passenger: %+v", pass)
+	}
+}
+
+func TestRegisterBothRolesDuplicateAndRestartTCP(t *testing.T) {
+	cfg, st, _ := startTestServer(t)
+	c, _ := client.Dial(cfg)
+	defer c.Close()
+	var driver protocol.RegisterResult
+	if err := c.MustOK(protocol.OpRegister, protocol.RegisterData{
+		Username: "cli-motorista", Password: "abc", Role: protocol.RoleDriver,
+	}, &driver); err != nil {
+		t.Fatal(err)
+	}
+	if driver.UserID == "" || driver.Role != protocol.RoleDriver {
+		t.Fatalf("%+v", driver)
+	}
+	var pass protocol.RegisterResult
+	if err := c.MustOK(protocol.OpRegister, protocol.RegisterData{
+		Username: "cli-passageiro", Password: "abc", Role: protocol.RolePassenger,
+	}, &pass); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.MustOK(protocol.OpRegister, protocol.RegisterData{
+		Username: "cli-motorista", Password: "xyz", Role: protocol.RoleDriver,
+	}, nil); err == nil {
+		t.Fatal("duplicate username must fail")
+	}
+	st2, err := store.New(st.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st2.Authenticate("cli-motorista", "abc"); err != nil {
+		t.Fatal("driver must persist")
+	}
+	if _, err := st2.Authenticate("cli-passageiro", "abc"); err != nil {
+		t.Fatal("passenger must persist")
 	}
 }
 

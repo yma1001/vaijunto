@@ -1,0 +1,232 @@
+package cliui
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/yma1001/vaijunto/internal/protocol"
+)
+
+func TestParseBRDate(t *testing.T) {
+	iso, err := ParseBRDate("16/09/2026")
+	if err != nil || iso != "2026-09-16" {
+		t.Fatalf("got %q %v", iso, err)
+	}
+	if _, err := ParseBRDate("31/02/2026"); err == nil {
+		t.Fatal("31/02 must fail")
+	}
+	if _, err := ParseBRDate("2026-09-16"); err == nil {
+		t.Fatal("ISO must not be accepted in the CLI")
+	}
+	if _, err := ParseBRDate(""); err == nil {
+		t.Fatal("empty date")
+	}
+	if _, err := ParseBRDate("aa/bb/cccc"); err == nil {
+		t.Fatal("garbage date")
+	}
+}
+
+func TestFormatBRDate(t *testing.T) {
+	if got := FormatBRDate("2026-10-10"); got != "10/10/2026" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestParseBRLToCents(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int64
+	}{
+		{"15", 1500},
+		{"15,50", 1550},
+		{"15.50", 1550},
+		{"15,5", 1550},
+		{"0", 0},
+		{"0,01", 1},
+		{"100", 10000},
+	}
+	for _, c := range cases {
+		got, err := ParseBRLToCents(c.in)
+		if err != nil || got != c.want {
+			t.Fatalf("%q: got %d %v want %d", c.in, got, err, c.want)
+		}
+	}
+}
+
+func TestParseBRLToCentsInvalid(t *testing.T) {
+	bads := []string{
+		"",
+		"-15",
+		"+15",
+		"15,555",
+		"15,50,20",
+		"abc",
+		"15,5.0",
+		"1.500,00",
+		"15,50.00",
+		",50",
+		"15,",
+		"15.505",
+	}
+	for _, in := range bads {
+		if _, err := ParseBRLToCents(in); err == nil {
+			t.Fatalf("expected error for %q", in)
+		}
+	}
+}
+
+func TestFormatBRL(t *testing.T) {
+	if got := FormatBRL(1500); got != "R$ 15,00" {
+		t.Fatalf("got %q", got)
+	}
+	if got := FormatBRL(1550); got != "R$ 15,50" {
+		t.Fatalf("got %q", got)
+	}
+	if got := FormatBRL(1); got != "R$ 0,01" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestParseCitiesTwoAndFour(t *testing.T) {
+	two, err := ParseCities("Salvador, Feira de Santana")
+	if err != nil || len(two) != 2 {
+		t.Fatalf("%v %#v", err, two)
+	}
+	four, err := ParseCities("Salvador, Feira de Santana, Jequié, Vitória da Conquista")
+	if err != nil || len(four) != 4 {
+		t.Fatalf("%v %#v", err, four)
+	}
+	if four[3] != "Vitória da Conquista" {
+		t.Fatalf("trim/keep names: %#v", four)
+	}
+}
+
+func TestParseCitiesRejectsEmptyAndShort(t *testing.T) {
+	if _, err := ParseCities("Salvador"); err == nil {
+		t.Fatal("one city")
+	}
+	if _, err := ParseCities("Salvador, , Feira de Santana"); err == nil {
+		t.Fatal("empty item")
+	}
+	if _, err := ParseCities(""); err == nil {
+		t.Fatal("empty")
+	}
+}
+
+func TestStatusPT(t *testing.T) {
+	if StatusPT("ACTIVE") != "ATIVA" {
+		t.Fatal(StatusPT("ACTIVE"))
+	}
+	if StatusPT("CANCELLED") != "CANCELADA" {
+		t.Fatal(StatusPT("CANCELLED"))
+	}
+	if StatusPT("CONFIRMED") != "CONFIRMADA" {
+		t.Fatal(StatusPT("CONFIRMED"))
+	}
+}
+
+func TestFormatRideAndItineraryNoRawJSON(t *testing.T) {
+	ride := protocol.RideView{
+		RideID:        "ride-abc",
+		Cities:        []string{"Salvador", "Feira de Santana"},
+		DepartureDate: "2026-10-10",
+		DepartureTime: "08:00",
+		Capacity:      2,
+		Status:        "ACTIVE",
+		Segments: []protocol.SegmentView{
+			{Origin: "Salvador", Destination: "Feira de Santana", Price: 1550, AvailableSeats: 2},
+		},
+	}
+	pass := protocol.ListRidePassengersResult{
+		RideID: "ride-abc",
+		Segments: []protocol.SegmentPassengersView{
+			{
+				Origin: "Salvador", Destination: "Feira de Santana",
+				Passengers: []protocol.PassengerOnLeg{{Username: "ana", ReservationID: "res-1"}},
+			},
+		},
+	}
+	out := FormatRide(1, ride, &pass)
+	for _, need := range []string{"ID: ride-abc", "ATIVA", "Salvador → Feira de Santana", "10/10/2026", "R$ 15,50", "ana", "res-1"} {
+		if !strings.Contains(out, need) {
+			t.Fatalf("missing %q in\n%s", need, out)
+		}
+	}
+	if strings.Contains(out, `"rideId"`) || strings.Contains(out, `"status"`) {
+		t.Fatalf("raw JSON leaked:\n%s", out)
+	}
+
+	it := protocol.ItineraryView{
+		TotalPrice: 1550,
+		Transfers:  0,
+		Legs: []protocol.LegView{
+			{
+				RideID: "ride-abc", Origin: "Salvador", Destination: "Feira de Santana",
+				DepartureDate: "2026-10-10", DepartureTime: "08:00", Price: 1550, AvailableSeats: 2,
+			},
+		},
+	}
+	itOut := FormatItinerary(1, it)
+	for _, need := range []string{"Origem: Salvador", "Destino: Feira de Santana", "R$ 15,50", "Baldeações: 0", "Carona: ride-abc"} {
+		if !strings.Contains(itOut, need) {
+			t.Fatalf("missing %q in\n%s", need, itOut)
+		}
+	}
+
+	res := protocol.ReservationView{
+		ReservationID: "res-1",
+		Status:        "CONFIRMED",
+		TotalPrice:    1550,
+		CreatedAt:     "2026-09-16T12:30:00Z",
+		Legs:          it.Legs,
+	}
+	rOut := FormatReservation(1, res)
+	for _, need := range []string{"ID: res-1", "CONFIRMADA", "16/09/2026 12:30", "R$ 15,50"} {
+		if !strings.Contains(rOut, need) {
+			t.Fatalf("missing %q in\n%s", need, rOut)
+		}
+	}
+}
+
+func TestValidateRegisterInput(t *testing.T) {
+	if err := ValidateRegisterInput("", "a", "a"); err == nil {
+		t.Fatal("empty user")
+	}
+	if err := ValidateRegisterInput("u", "", ""); err == nil {
+		t.Fatal("empty pass")
+	}
+	if err := ValidateRegisterInput("u", "a", "b"); err == nil {
+		t.Fatal("mismatch")
+	}
+	if err := ValidateRegisterInput("u", "a", "a"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFriendlyError(t *testing.T) {
+	if got := FriendlyError(errString("REGISTER failed: VALIDATION_ERROR username already exists")); got != "este usuário já existe" {
+		t.Fatal(got)
+	}
+	if got := FriendlyError(errString("dial tcp 127.0.0.1:5000: connection refused")); got != "falha de comunicação com o servidor" {
+		t.Fatal(got)
+	}
+}
+
+func TestResolveListChoice(t *testing.T) {
+	ids := []string{"ride-a", "ride-b"}
+	i, err := ResolveListChoice("1", ids)
+	if err != nil || i != 0 {
+		t.Fatalf("%d %v", i, err)
+	}
+	i, err = ResolveListChoice("ride-b", ids)
+	if err != nil || i != 1 {
+		t.Fatalf("%d %v", i, err)
+	}
+	if _, err := ResolveListChoice("9", ids); err == nil {
+		t.Fatal("oob")
+	}
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }

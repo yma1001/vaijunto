@@ -139,6 +139,8 @@ Contas seed (senha `senha123`):
 
 Preços: **centavos** (`int64`). Datas: `YYYY-MM-DD`. Horário: `HH:MM` 24h.
 
+O **fio não mudou** nesta revisão de usabilidade. Só as CLIs humanas (`cmd/driver`, `cmd/passenger`) convertem data `DD/MM/AAAA` e preço em reais (`15` / `15,50` / `15.50` → centavos) na borda. `state.json`, testes de protocolo e um cliente Python continuam falando ISO + centavos.
+
 ### PING
 
 `data`: `{}` → `{ "message": "PONG" }`

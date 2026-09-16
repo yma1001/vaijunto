@@ -14,12 +14,12 @@ import (
 // Client é a biblioteca TCP usada pelos CLIs, testes e loadtest.
 // Mantém uma conexão persistente após LOGIN, como a sessão do servidor.
 type Client struct {
-	cfg     config.Config
-	conn    net.Conn
-	seq     atomic.Int64
-	UserID  string
-	Role    string
-	Name    string
+	cfg    config.Config
+	conn   net.Conn
+	seq    atomic.Int64
+	UserID string
+	Role   string
+	Name   string
 }
 
 func Dial(cfg config.Config) (*Client, error) {
@@ -116,6 +116,16 @@ func (c *Client) Login(user, pass string) error {
 	c.Role = out.Role
 	c.Name = out.Username
 	return nil
+}
+
+func (c *Client) Register(user, pass, role string) (protocol.RegisterResult, error) {
+	var out protocol.RegisterResult
+	if err := c.MustOK(protocol.OpRegister, protocol.RegisterData{
+		Username: user, Password: pass, Role: role,
+	}, &out); err != nil {
+		return protocol.RegisterResult{}, err
+	}
+	return out, nil
 }
 
 func (c *Client) Conn() net.Conn { return c.conn }

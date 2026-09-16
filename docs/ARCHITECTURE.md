@@ -29,6 +29,7 @@ flowchart LR
 | `internal/store` | Estado canônico e persistência. |
 | `internal/search` | Grafo derivado das caronas (DFS). |
 | `internal/client` | Biblioteca TCP dos CLIs e testes. |
+| `internal/cliui` | Só apresentação humana: data BR, BRL, listagens. Não altera o protocolo. |
 
 Não há réplica, banco, Redis nem broker. Um servidor central, como o enunciado pede.
 

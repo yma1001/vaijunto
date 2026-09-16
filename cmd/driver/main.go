@@ -2,13 +2,15 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yma1001/vaijunto/internal/client"
+	"github.com/yma1001/vaijunto/internal/cliui"
 	"github.com/yma1001/vaijunto/internal/config"
 	"github.com/yma1001/vaijunto/internal/protocol"
 )
@@ -32,15 +34,17 @@ func main() {
 		return strings.TrimSpace(in.Text())
 	}
 
+	var lastRides []protocol.RideView
+
 	for {
 		if c.Role == "" {
-			fmt.Println("1) LOGIN  2) PING  0) sair")
+			fmt.Println("1) entrar  2) criar conta  3) PING  0) sair")
 			switch read("> ") {
 			case "1":
 				u := read("usuário: ")
 				p := read("senha: ")
 				if err := c.Login(u, p); err != nil {
-					fmt.Println("erro:", err)
+					fmt.Println(cliui.FriendlyError(err))
 					continue
 				}
 				if c.Role != protocol.RoleDriver {
@@ -50,13 +54,17 @@ func main() {
 				}
 				fmt.Println("ok, autenticado como", c.Name)
 			case "2":
+				cliui.RegisterInteractive(c, read, protocol.RoleDriver)
+			case "3":
 				if err := c.Ping(); err != nil {
-					fmt.Println("erro:", err)
+					fmt.Println(cliui.FriendlyError(err))
 				} else {
 					fmt.Println("PONG")
 				}
-			default:
+			case "0":
 				return
+			default:
+				fmt.Println("opção inválida")
 			}
 			continue
 		}
@@ -65,79 +73,156 @@ func main() {
 		fmt.Println("4) cancelar carona  5) ping  6) logout  0) sair")
 		switch read("> ") {
 		case "1":
-			cities := splitCSV(read("cidades (A, B, C): "))
-			date := read("data YYYY-MM-DD: ")
-			hora := read("horário HH:MM: ")
-			cap, _ := strconv.Atoi(read("assentos: "))
-			prices := parsePrices(read("preços em centavos, um por trecho (ex. 1500,2000): "))
+			fmt.Print(cliui.CitiesPrompt)
+			cities, err := cliui.ParseCities(read(""))
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			iso, err := cliui.ParseBRDate(read("data (DD/MM/AAAA): "))
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			hora := read("horário (HH:MM): ")
+			if _, err := time.Parse("15:04", hora); err != nil {
+				fmt.Println("horário inválido: use HH:MM (exemplo: 08:00)")
+				continue
+			}
+			cap, err := strconv.Atoi(read("assentos: "))
+			if err != nil || cap < 1 {
+				fmt.Println("informe um número de assentos maior que zero")
+				continue
+			}
+			prices := make([]int64, 0, len(cities)-1)
+			okPrices := true
+			for i := 0; i < len(cities)-1; i++ {
+				raw := read(fmt.Sprintf("Preço %s → %s (R$): ", cities[i], cities[i+1]))
+				cents, err := cliui.ParseBRLToCents(raw)
+				if err != nil {
+					fmt.Println(err)
+					okPrices = false
+					break
+				}
+				prices = append(prices, cents)
+			}
+			if !okPrices {
+				continue
+			}
 			var out protocol.RideView
 			if err := c.MustOK(protocol.OpPublishRide, protocol.PublishRideData{
-				Cities: cities, DepartureDate: date, DepartureTime: hora, Capacity: cap, SegmentPrices: prices,
+				Cities: cities, DepartureDate: iso, DepartureTime: hora, Capacity: cap, SegmentPrices: prices,
 			}, &out); err != nil {
-				fmt.Println("erro:", err)
+				fmt.Println(cliui.FriendlyError(err))
 				continue
 			}
-			printJSON(out)
+			fmt.Print(cliui.FormatRide(0, out, nil))
 		case "2":
-			var out protocol.ListDriverRidesResult
-			if err := c.MustOK(protocol.OpListDriverRides, map[string]any{}, &out); err != nil {
-				fmt.Println("erro:", err)
+			rides, err := loadDriverRides(c)
+			if err != nil {
+				fmt.Println(cliui.FriendlyError(err))
 				continue
 			}
-			printJSON(out)
+			lastRides = rides
+			printDriverRides(c, rides)
 		case "3":
-			id := read("rideId: ")
-			var out protocol.ListRidePassengersResult
-			if err := c.MustOK(protocol.OpListRidePassengers, protocol.ListRidePassengersData{RideID: id}, &out); err != nil {
-				fmt.Println("erro:", err)
+			rides, err := ensureRides(c, lastRides)
+			if err != nil {
+				fmt.Println(cliui.FriendlyError(err))
 				continue
 			}
-			printJSON(out)
+			lastRides = rides
+			printDriverRides(c, rides)
+			idx, err := pickRide(read("número da carona: "), rides)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			pass, err := loadPassengers(c, rides[idx].RideID)
+			if err != nil {
+				fmt.Println(cliui.FriendlyError(err))
+				continue
+			}
+			fmt.Print(cliui.FormatRide(idx+1, rides[idx], pass))
 		case "4":
-			id := read("rideId: ")
-			var out protocol.RideView
-			if err := c.MustOK(protocol.OpCancelRide, protocol.CancelRideData{RideID: id}, &out); err != nil {
-				fmt.Println("erro:", err)
+			rides, err := ensureRides(c, lastRides)
+			if err != nil {
+				fmt.Println(cliui.FriendlyError(err))
 				continue
 			}
-			printJSON(out)
+			lastRides = rides
+			printDriverRides(c, rides)
+			idx, err := pickRide(read("número da carona: "), rides)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			fmt.Println("ID:", rides[idx].RideID)
+			var out protocol.RideView
+			if err := c.MustOK(protocol.OpCancelRide, protocol.CancelRideData{RideID: rides[idx].RideID}, &out); err != nil {
+				fmt.Println(cliui.FriendlyError(err))
+				continue
+			}
+			fmt.Print(cliui.FormatRide(idx+1, out, nil))
 		case "5":
 			if err := c.Ping(); err != nil {
-				fmt.Println("erro:", err)
+				fmt.Println(cliui.FriendlyError(err))
 			} else {
 				fmt.Println("PONG")
 			}
 		case "6":
 			_ = c.MustOK(protocol.OpLogout, map[string]any{}, nil)
 			return
-		default:
+		case "0":
 			return
+		default:
+			fmt.Println("opção inválida")
 		}
 	}
 }
 
-func splitCSV(s string) []string {
-	parts := strings.Split(s, ",")
-	out := []string{}
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
+func loadDriverRides(c *client.Client) ([]protocol.RideView, error) {
+	var out protocol.ListDriverRidesResult
+	if err := c.MustOK(protocol.OpListDriverRides, map[string]any{}, &out); err != nil {
+		return nil, err
 	}
-	return out
+	sort.Slice(out.Rides, func(i, j int) bool { return out.Rides[i].RideID < out.Rides[j].RideID })
+	return out.Rides, nil
 }
 
-func parsePrices(s string) []int64 {
-	var out []int64
-	for _, p := range splitCSV(s) {
-		n, _ := strconv.ParseInt(p, 10, 64)
-		out = append(out, n)
+func ensureRides(c *client.Client, last []protocol.RideView) ([]protocol.RideView, error) {
+	if len(last) > 0 {
+		return last, nil
 	}
-	return out
+	return loadDriverRides(c)
 }
 
-func printJSON(v any) {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	fmt.Println(string(b))
+func printDriverRides(c *client.Client, rides []protocol.RideView) {
+	if len(rides) == 0 {
+		fmt.Println("nenhuma carona publicada")
+		return
+	}
+	for i, r := range rides {
+		pass, _ := loadPassengers(c, r.RideID)
+		fmt.Print(cliui.FormatRide(i+1, r, pass))
+	}
+}
+
+func loadPassengers(c *client.Client, rideID string) (*protocol.ListRidePassengersResult, error) {
+	var out protocol.ListRidePassengersResult
+	if err := c.MustOK(protocol.OpListRidePassengers, protocol.ListRidePassengersData{RideID: rideID}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func pickRide(input string, rides []protocol.RideView) (int, error) {
+	if len(rides) == 0 {
+		return -1, fmt.Errorf("nenhuma carona na lista")
+	}
+	ids := make([]string, len(rides))
+	for i, r := range rides {
+		ids[i] = r.RideID
+	}
+	return cliui.ResolveListChoice(input, ids)
 }

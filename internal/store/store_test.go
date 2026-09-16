@@ -1,11 +1,13 @@
 package store
 
 import (
+	"errors"
 	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/yma1001/vaijunto/internal/domain"
+	"github.com/yma1001/vaijunto/internal/protocol"
 )
 
 func testStore(t *testing.T) *Store {
@@ -214,6 +216,56 @@ func TestPersistenceRestartKeepsRides(t *testing.T) {
 	list := st2.ListReservations("user-pass-1")
 	if len(list) != 1 {
 		t.Fatal("reservation not persisted")
+	}
+}
+
+func TestRegisterBothRolesDuplicateAndRestart(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	st, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	driver, err := st.Register("novo-motorista", "s1", protocol.RoleDriver)
+	if err != nil || driver.UserID == "" || driver.Role != protocol.RoleDriver {
+		t.Fatalf("driver: %#v %v", driver, err)
+	}
+	pass, err := st.Register("novo-passageiro", "s2", protocol.RolePassenger)
+	if err != nil || pass.UserID == "" || pass.Role != protocol.RolePassenger {
+		t.Fatalf("passenger: %#v %v", pass, err)
+	}
+	if driver.UserID == pass.UserID {
+		t.Fatal("server must generate distinct userIds")
+	}
+	_, err = st.Register("novo-motorista", "outra", protocol.RoleDriver)
+	if !errors.Is(err, ErrAlreadyExists) {
+		t.Fatalf("duplicate want ErrAlreadyExists got %v", err)
+	}
+	_, err = st.Register("x", "y", "ADMIN")
+	if err == nil || !errors.Is(err, ErrValidation) {
+		t.Fatalf("invalid role: %v", err)
+	}
+	st2, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, err := st2.Authenticate("novo-motorista", "s1"); err != nil || u.UserID != driver.UserID {
+		t.Fatalf("driver lost after restart: %#v %v", u, err)
+	}
+	if u, err := st2.Authenticate("novo-passageiro", "s2"); err != nil || u.UserID != pass.UserID {
+		t.Fatalf("passenger lost after restart: %#v %v", u, err)
+	}
+}
+
+func TestPublishRideTwoAndFourCities(t *testing.T) {
+	st := testStore(t)
+	two, err := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana"}, "2026-10-10", "08:00", 2, []int64{1500})
+	if err != nil || len(two.Cities) != 2 || len(two.Segments) != 1 {
+		t.Fatalf("two cities: %#v %v", two, err)
+	}
+	four, err := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana", "Jequié", "Vitória da Conquista"}, "2026-10-10", "09:00", 2, []int64{1500, 2000, 2500})
+	if err != nil || len(four.Cities) != 4 || len(four.Segments) != 3 {
+		t.Fatalf("four cities: %#v %v", four, err)
 	}
 }
 

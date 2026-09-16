@@ -13,7 +13,9 @@ Senha de todas: `senha123`
 | motorista1, motorista2 | DRIVER |
 | passageiro1, passageiro2, passageiro3 | PASSENGER |
 
-Preços em **centavos** (1500 = R$ 15,00).
+Também dá para **criar conta** no menu inicial de cada CLI (`2 criar conta`): só usuário, senha e confirmação. O servidor gera o ID. Sem CPF, e-mail ou telefone.
+
+No **protocolo e no `state.json`** os preços continuam em **centavos** (`int64`, 1500 = R$ 15,00) e as datas em **YYYY-MM-DD**. Só a CLI pede data `DD/MM/AAAA` e preço em reais (`15`, `15,50` ou `15.50`), um trecho por vez.
 
 ## Pré-requisitos
 
@@ -66,6 +68,8 @@ Terminal 2 (motorista):
 export SERVER_HOST=127.0.0.1
 export SERVER_PORT=5000
 ./bin/driver
+# menu: 1 entrar  2 criar conta  3 PING  0 sair
+# publicar: cidades livres (mínimo 2), data DD/MM/AAAA, preço por trecho em R$
 ```
 
 Terminal 3 (passageiro):
@@ -250,12 +254,13 @@ Persistência no Docker: o volume `vaijunto-data` sobrevive a `docker rm`. A ses
 | `docs/CONCURRENCY.md` | locks, atomicidade, invariantes |
 | `docs/DECISIONS.md` | decisões de projeto vs enunciado |
 | `docs/TESTING.md` | como testar |
+| `docs/ROUTING_API.md` | análise (não implementada) de geocode/ETA |
 
 ## Layout do código
 
 ```text
 cmd/server driver passenger loadtest smoke
-internal/protocol domain store search service server client config
+internal/protocol domain store search service server client config cliui
 ```
 
 Comentários no código explicam **por que** (framing, lock, grafo), não a sintaxe.

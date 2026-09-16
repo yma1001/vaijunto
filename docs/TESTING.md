@@ -107,8 +107,57 @@ Docker: Docker Desktop. `docker build` / `docker compose` no PowerShell; `bash s
 | Busca não reserva (INV-5) | `TestSearchDoesNotReserve` |
 | Itinerário composto via TCP | `TestCompositeSearchAndConfirmTCP` |
 | REGISTER + LOGOUT fecha a conexão | `TestRegisterLoginLogout` |
+| REGISTER DRIVER+PASSENGER, duplicata, persistência após `Store` restart | `TestRegisterBothRolesDuplicateAndRestart`, `TestRegisterBothRolesDuplicateAndRestartTCP` |
+| Rota com 2 e 4+ cidades | `TestPublishRideTwoAndFourCities`, `TestParseCitiesTwoAndFour` |
+| Data BR na CLI (`DD/MM/AAAA` ↔ ISO) | `internal/cliui/cliui_test.go` (`TestParseBRDate`) |
+| Preço BRL → centavos (vírgula, ponto, inteiro, inválido) | `TestParseBRLToCents`, `TestParseBRLToCentsInvalid` |
+| Listagem formatada (sem JSON cru) | `TestFormatRideAndItineraryNoRawJSON` |
 | Motorista cancela carona (passageiro vê CANCELLED) | `TestDriverCancelRideTCP` |
 | Validação do envelope | `internal/protocol/message_test.go` |
+
+A CLI não imprime JSON cru: caronas, buscas e reservas saem com rótulos, data `DD/MM/AAAA`, rota com `→`, status em português (`ATIVA` / `CANCELADA` / `CONFIRMADA`) e `R$ 15,00`. O protocolo e o arquivo persistido continuam ISO + centavos.
+
+Demo manual isolada (não use o `data/state.json` do aluno; `DATA_PATH` temporário + porta livre):
+
+```bash
+TMP=$(mktemp -d)
+export DATA_PATH="$TMP/state.json"
+export SERVER_HOST=127.0.0.1
+export SERVER_PORT=15001
+./bin/server &
+# em outros terminais: ./bin/driver e ./bin/passenger
+# criar conta motorista e passageiro; publicar 4 cidades; data BR; preços R$;
+# buscar; reservar; listar formatado; cancelar; matar o servidor; subir de novo;
+# LOGIN nas mesmas contas e conferir persistência.
+```
+
+Amostra real da CLI (DATA_PATH temporário; protocolo no fio continuou ISO + centavos):
+
+```text
+1) entrar  2) criar conta  3) PING  0) sair
+> 2
+usuário: motorista_cli
+...
+Conta criada.
+  ID: user-2ee3277d0e59357a
+Você já pode entrar com esse usuário.
+
+Cidades da rota, separadas por vírgula (mínimo 2)
+exemplo: Salvador, Feira de Santana, Jequié, Vitória da Conquista
+> Salvador, Feira de Santana, Jequié, Vitória da Conquista
+data (DD/MM/AAAA): 10/10/2026
+Preço Salvador → Feira de Santana (R$): 15
+Preço Feira de Santana → Jequié (R$): 20,50
+Preço Jequié → Vitória da Conquista (R$): 25.00
+Carona
+  ID: ride-32753ead6c73854c
+  Status: ATIVA
+  Rota: Salvador → Feira de Santana → Jequié → Vitória da Conquista
+  Data: 10/10/2026
+  Trechos:
+    1. Salvador → Feira de Santana
+       Preço: R$ 15,00
+```
 
 ## Loadtest
 

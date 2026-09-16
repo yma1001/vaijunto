@@ -134,3 +134,31 @@ Não prender a `127.0.0.1` na demo multi-máquina. Clientes usam `SERVER_HOST`/`
 Status: CONFIRMADO (projeto)
 
 Texto em `relatorio/relatorio-sbc.md`, limitado ao conteúdo de 8 páginas. Compilação com o estilo SBC oficial fica a cargo do aluno se o `.sty` da SBC for usado.
+
+## DEC-020 — Datas brasileiras só na CLI humana
+
+Status: CONFIRMADO (projeto)
+Fonte: usabilidade da demo; protocolo permanece ISO
+
+`cmd/driver` e `cmd/passenger` pedem e mostram `DD/MM/AAAA`. Conversão testável em `internal/cliui` via `time.Parse`. O JSON da rede, os testes de protocolo e o `state.json` continuam `YYYY-MM-DD`. Data inválida (incluindo 31/02) gera mensagem amigável; não entra no fio.
+
+## DEC-021 — Reais na CLI, centavos no protocolo
+
+Status: CONFIRMADO (projeto)
+Fonte: DEC-010; só muda a interface humana
+
+A CLI pede um preço **por trecho** (`Preço X → Y (R$):`) e aceita `15`, `15,50` ou `15.50`. Internamente é `int64` centavos, **sem `float64`**. O JSON persistido e o protocolo **não** passam a usar decimal. Não se parseia uma linha com vários preços separados por vírgula (a vírgula brasileira seria ambígua). Exibição: `R$ 15,00`.
+
+## DEC-022 — Cadastro no menu inicial reutiliza REGISTER
+
+Status: CONFIRMADO (projeto)
+Fonte: DEC-016
+
+Menus iniciais: `1 entrar`, `2 criar conta`, `3 PING`, `0 sair`. Criar conta pede só usuário, senha e confirmação. O cliente motorista envia `role=DRIVER`; o passageiro, `PASSENGER`. Sem CPF, e-mail, telefone ou nome completo. O servidor gera o `userId`. Depois do cadastro a CLI mostra o ID e pede LOGIN; não autentica sozinha.
+
+## DEC-023 — Sem API de roteamento / ETA nesta entrega
+
+Status: CONFIRMADO (projeto)
+Fonte: CHAT.md §24–25; análise em `docs/ROUTING_API.md`
+
+Não há geocode, distância, ETA nem sugestão de preço por km neste código. Publicação manual funciona sozinha. Comparativo A (nada) / B (openrouteservice + env) / C (OSRM em outro container) está em `docs/ROUTING_API.md`. Recomendação desta entrega: A. Se no futuro houver API, ela será opcional, não bloqueará publicação, não rodará sob o `RWMutex` e a chave ficará só em variável de ambiente.
