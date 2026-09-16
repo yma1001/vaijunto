@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"io"
 	"log"
 	"net"
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -172,7 +174,7 @@ func publishSample(t *testing.T, cfg config.Config) protocol.RideView {
 	}
 	var ride protocol.RideView
 	if err := d.MustOK(protocol.OpPublishRide, protocol.PublishRideData{
-		Cities: []string{"Salvador", "Feira de Santana", "Jequié"},
+		Cities:        []string{"Salvador", "Feira de Santana", "Jequié"},
 		DepartureDate: "2026-10-10", DepartureTime: "07:30",
 		Capacity: 1, SegmentPrices: []int64{1000, 1500},
 	}, &ride); err != nil {
@@ -361,6 +363,75 @@ func TestRepeatedConfirmSameRequestIDOverTCP(t *testing.T) {
 	if ra.Reservation.ReservationID != rb.Reservation.ReservationID {
 		t.Fatal("idempotency broken")
 	}
+}
+
+func TestConfirmDuplicateLegsRejectedOverTCP(t *testing.T) {
+	cfg, st, _ := startTestServer(t)
+	ride := publishSample(t, cfg)
+	before := st.ListDriverRides("user-driver-1")[0].Segments[0].AvailableSeats
+	p, _ := client.Dial(cfg)
+	defer p.Close()
+	_ = p.Login("passageiro1", "senha123")
+	resp, err := p.Call(protocol.OpConfirmReservation, "dup-tcp", protocol.ConfirmReservationData{
+		Legs: []protocol.ConfirmLeg{
+			{RideID: ride.RideID, Origin: "Salvador", Destination: "Jequié"},
+			{RideID: ride.RideID, Origin: "Salvador", Destination: "Jequié"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Status != protocol.StatusError || resp.Error == nil || resp.Error.Code != protocol.CodeValidationError {
+		t.Fatalf("want VALIDATION_ERROR, got %+v", resp)
+	}
+	if st.ListDriverRides("user-driver-1")[0].Segments[0].AvailableSeats != before {
+		t.Fatal("TCP duplicate confirm mutated seats")
+	}
+	if len(st.ListReservations("user-pass-1")) != 0 {
+		t.Fatal("TCP duplicate confirm created a reservation")
+	}
+}
+
+func TestInvalidConfirmJSONOverTCPDoesNotMutate(t *testing.T) {
+	cfg, st, _ := startTestServer(t)
+	_ = publishSample(t, cfg)
+	before := readFile(t, st.Path())
+	conn, err := net.Dial("tcp", cfg.ServerAddr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte(`{"version":1,"operation":"CONFIRM_RESERVATION","requestId":"bad-json","data":{`)
+	if err := protocol.WriteFrame(conn, payload); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := protocol.ReadFrame(conn, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+	var resp protocol.Response
+	_ = json.Unmarshal(raw, &resp)
+	if resp.Error == nil || resp.Error.Code != protocol.CodeInvalidJSON {
+		t.Fatalf("%+v", resp)
+	}
+	after := readFile(t, st.Path())
+	if !bytes.Equal(before, after) {
+		t.Fatal("invalid TCP message mutated persisted state")
+	}
+	c, _ := client.Dial(cfg)
+	defer c.Close()
+	if err := c.Ping(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readFile(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 func TestLoadishLatencyReported(t *testing.T) {

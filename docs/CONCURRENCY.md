@@ -32,14 +32,19 @@ Equivalência com “travas dos trechos” (barema 7): o lock global é como adq
 ```text
 Lock
   1. lookup de idempotência (passengerId|requestId)
-  2. expandir legs → índices de segmento
-  3. revalidar availableSeats >= 1 em TODOS
-  4. se algum falhar: Unlock, resposta NO_SEATS, estado intacto
-  5. decrementar todos, gravar Reservation CONFIRMED
-  6. persistir JSON
+  2. expandir legs → índices de segmento (caminho válido na carona)
+  3. mesma departureDate em todas as caronas
+  4. rejeitar (rideId, segmentIndex) repetido no pedido (VALIDATION_ERROR)
+  5. revalidar availableSeats >= 1 em TODOS
+  6. legs consecutivas: destino → origem seguinte
+  7. se algum falhar: Unlock, estado intacto (sem clamp de negativo)
+  8. decrementar todos, gravar Reservation CONFIRMED
+  9. persistir JSON
 Unlock
 WriteFrame
 ```
+
+Um pedido com a mesma carona Salvador→Jequié duas vezes (capacidade 1) **não** confirma e **não** deixa `availableSeats = -1`: o segmento é visto duas vezes no passo 4 e o confirm aborta. Sobreposição parcial (A→C e B→C) cai na mesma regra.
 
 Busca ≠ reserva. Dois `SEARCH` podem ver 1 vaga; só um `CONFIRM` vence.
 

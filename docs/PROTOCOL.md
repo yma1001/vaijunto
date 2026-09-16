@@ -85,7 +85,7 @@ Erro:
 |---|---|
 | INVALID_FRAME | tamanho 0, absurdo, ou frame incompleto (conexão tende a fechar) |
 | INVALID_JSON | payload não é JSON objeto |
-| VALIDATION_ERROR | version≠1, campos faltando, rota inválida |
+| VALIDATION_ERROR | version≠1, campos faltando, rota inválida, legs sobrepostas/desconectadas/datas incompatíveis |
 | UNKNOWN_OPERATION | `operation` desconhecida |
 | UNAUTHENTICATED | operação protegida sem `LOGIN` |
 | FORBIDDEN | papel errado ou credencial inválida |
@@ -255,11 +255,18 @@ O cliente reenvia as `legs` (não há hold). O servidor **revalida** todos os tr
 }
 ```
 
-Cada leg é um intervalo contínuo **numa** carona (pode cobrir vários segmentos internos).
+Cada leg é um intervalo contínuo **numa** carona (pode cobrir vários segmentos internos). O servidor expande cada leg nos segmentos físicos `(rideId, segmentIndex)` **antes** de mutar qualquer coisa.
+
+Regras de validação do pedido (tudo `VALIDATION_ERROR`, estado intacto):
+
+- cada `origin`/`destination` deve existir nessa carona, na ordem da rota;
+- legs consecutivas devem conectar: destino da anterior = origem da seguinte;
+- todas as caronas do pedido devem ter a **mesma** `departureDate` (regra same-day da busca; não há filtro por horário/ETA);
+- o mesmo segmento físico não pode aparecer duas vezes no mesmo pedido (leg idêntica repetida **ou** sobreposição parcial, ex. A→C e B→C na rota A-B-C). O servidor **não** deduplica em silêncio.
 
 Idempotência: o mesmo `(usuário da sessão, requestId)` devolve a mesma reserva sem consumir outro assento.
 
-Erro `NO_SEATS`: nenhum trecho foi decrementado.
+Erro `NO_SEATS`: nenhum trecho foi decrementado. Erro `VALIDATION_ERROR` nestes casos também não cria reserva, não altera `availableSeats` e não grava o arquivo.
 
 ### LIST_RESERVATIONS
 

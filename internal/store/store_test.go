@@ -1,8 +1,11 @@
 package store
 
 import (
+	"bytes"
 	"errors"
+	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 
@@ -279,5 +282,200 @@ func TestNeverNegativeOrAboveCapacity(t *testing.T) {
 	}
 	if v := st.CheckInvariants(); len(v) > 0 {
 		t.Fatal(v)
+	}
+}
+
+func rideSeats(t *testing.T, st *Store, driverID, rideID string) []int {
+	t.Helper()
+	for _, r := range st.ListDriverRides(driverID) {
+		if r.RideID != rideID {
+			continue
+		}
+		out := make([]int, len(r.Segments))
+		for i, seg := range r.Segments {
+			out[i] = seg.AvailableSeats
+		}
+		return out
+	}
+	t.Fatalf("ride %s not found", rideID)
+	return nil
+}
+
+func readPersisted(t *testing.T, st *Store) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(st.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func mustRejectUnchanged(t *testing.T, st *Store, driverID, rideID, passengerID string, beforeSeats []int, beforeFile []byte, err error) {
+	t.Helper()
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("want ErrValidation, got %v", err)
+	}
+	got := rideSeats(t, st, driverID, rideID)
+	if !slices.Equal(got, beforeSeats) {
+		t.Fatalf("seats mutated: got %v want %v", got, beforeSeats)
+	}
+	if n := len(st.ListReservations(passengerID)); n != 0 {
+		t.Fatalf("must not create reservation, got %d", n)
+	}
+	if !bytes.Equal(readPersisted(t, st), beforeFile) {
+		t.Fatal("persisted state changed after rejected confirm")
+	}
+	if v := st.CheckInvariants(); len(v) > 0 {
+		t.Fatal(v)
+	}
+}
+
+// Regression: duplicate identical legs used to confirm and decrement the same
+// segments twice (capacity 1 became -1). Must fail as VALIDATION_ERROR with
+// state intact — do not clamp negatives to hide the bug.
+func TestConfirmRejectsDuplicateIdenticalLegCapacity1(t *testing.T) {
+	st := testStore(t)
+	r := publishABC(t, st, 1)
+	beforeSeats := rideSeats(t, st, "user-driver-1", r.RideID)
+	beforeFile := readPersisted(t, st)
+	_, err := st.ConfirmReservation("user-pass-1", "dup-cap1", []domain.LegInput{
+		{RideID: r.RideID, Origin: "Salvador", Destination: "Jequié"},
+		{RideID: r.RideID, Origin: "Salvador", Destination: "Jequié"},
+	})
+	mustRejectUnchanged(t, st, "user-driver-1", r.RideID, "user-pass-1", beforeSeats, beforeFile, err)
+	if beforeSeats[0] != 1 || rideSeats(t, st, "user-driver-1", r.RideID)[0] != 1 {
+		t.Fatalf("capacity-1 duplicate must not go negative, seats=%v", rideSeats(t, st, "user-driver-1", r.RideID))
+	}
+}
+
+func TestConfirmRejectsDuplicateIdenticalLegCapacityGreaterThan1(t *testing.T) {
+	st := testStore(t)
+	r := publishABC(t, st, 3)
+	beforeSeats := rideSeats(t, st, "user-driver-1", r.RideID)
+	beforeFile := readPersisted(t, st)
+	_, err := st.ConfirmReservation("user-pass-1", "dup-cap3", []domain.LegInput{
+		{RideID: r.RideID, Origin: "Salvador", Destination: "Jequié"},
+		{RideID: r.RideID, Origin: "Salvador", Destination: "Jequié"},
+	})
+	mustRejectUnchanged(t, st, "user-driver-1", r.RideID, "user-pass-1", beforeSeats, beforeFile, err)
+}
+
+func TestConfirmRejectsPartialSegmentOverlap(t *testing.T) {
+	st := testStore(t)
+	r := publishABC(t, st, 2)
+	beforeSeats := rideSeats(t, st, "user-driver-1", r.RideID)
+	beforeFile := readPersisted(t, st)
+	_, err := st.ConfirmReservation("user-pass-1", "overlap-bc", []domain.LegInput{
+		{RideID: r.RideID, Origin: "Salvador", Destination: "Jequié"},
+		{RideID: r.RideID, Origin: "Feira de Santana", Destination: "Jequié"},
+	})
+	mustRejectUnchanged(t, st, "user-driver-1", r.RideID, "user-pass-1", beforeSeats, beforeFile, err)
+}
+
+func TestConfirmRejectLeavesSeatsReservationsAndFileUnchanged(t *testing.T) {
+	st := testStore(t)
+	r := publishABC(t, st, 1)
+	beforeSeats := rideSeats(t, st, "user-driver-1", r.RideID)
+	beforeFile := readPersisted(t, st)
+	_, err := st.ConfirmReservation("user-pass-1", "no-mutate", []domain.LegInput{
+		{RideID: r.RideID, Origin: "Salvador", Destination: "Feira de Santana"},
+		{RideID: r.RideID, Origin: "Salvador", Destination: "Feira de Santana"},
+	})
+	mustRejectUnchanged(t, st, "user-driver-1", r.RideID, "user-pass-1", beforeSeats, beforeFile, err)
+}
+
+func TestConfirmRejectsDisconnectedItinerary(t *testing.T) {
+	st := testStore(t)
+	r, err := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana", "Jequié", "Vitória da Conquista"}, "2026-10-01", "08:00", 2, []int64{1000, 1500, 2000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeSeats := rideSeats(t, st, "user-driver-1", r.RideID)
+	beforeFile := readPersisted(t, st)
+	_, err = st.ConfirmReservation("user-pass-1", "disconnected", []domain.LegInput{
+		{RideID: r.RideID, Origin: "Salvador", Destination: "Feira de Santana"},
+		{RideID: r.RideID, Origin: "Jequié", Destination: "Vitória da Conquista"},
+	})
+	mustRejectUnchanged(t, st, "user-driver-1", r.RideID, "user-pass-1", beforeSeats, beforeFile, err)
+}
+
+func TestConfirmRejectsIncompatibleDates(t *testing.T) {
+	st := testStore(t)
+	a, err := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana"}, "2026-10-01", "08:00", 1, []int64{1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := st.PublishRide("user-driver-2", []string{"Feira de Santana", "Jequié"}, "2026-10-02", "09:00", 1, []int64{2000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeA := rideSeats(t, st, "user-driver-1", a.RideID)
+	beforeB := rideSeats(t, st, "user-driver-2", b.RideID)
+	beforeFile := readPersisted(t, st)
+	_, err = st.ConfirmReservation("user-pass-1", "dates", []domain.LegInput{
+		{RideID: a.RideID, Origin: "Salvador", Destination: "Feira de Santana"},
+		{RideID: b.RideID, Origin: "Feira de Santana", Destination: "Jequié"},
+	})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("want ErrValidation, got %v", err)
+	}
+	if !slices.Equal(rideSeats(t, st, "user-driver-1", a.RideID), beforeA) {
+		t.Fatal("ride A seats mutated")
+	}
+	if !slices.Equal(rideSeats(t, st, "user-driver-2", b.RideID), beforeB) {
+		t.Fatal("ride B seats mutated")
+	}
+	if len(st.ListReservations("user-pass-1")) != 0 {
+		t.Fatal("must not create reservation")
+	}
+	if !bytes.Equal(readPersisted(t, st), beforeFile) {
+		t.Fatal("persisted state changed after rejected confirm")
+	}
+}
+
+func TestConfirmValidCompositeDistinctDrivers(t *testing.T) {
+	st := testStore(t)
+	a, err := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana"}, "2026-10-01", "08:00", 1, []int64{1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := st.PublishRide("user-driver-2", []string{"Feira de Santana", "Jequié"}, "2026-10-01", "09:00", 1, []int64{2000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := st.ConfirmReservation("user-pass-1", "composite-ok", []domain.LegInput{
+		{RideID: a.RideID, Origin: "Salvador", Destination: "Feira de Santana"},
+		{RideID: b.RideID, Origin: "Feira de Santana", Destination: "Jequié"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != domain.ResConfirmed || len(res.Legs) != 2 || res.TotalPrice != 3000 {
+		t.Fatalf("unexpected reservation: %#v", res)
+	}
+	if rideSeats(t, st, "user-driver-1", a.RideID)[0] != 0 {
+		t.Fatal("driver 1 seat not consumed")
+	}
+	if rideSeats(t, st, "user-driver-2", b.RideID)[0] != 0 {
+		t.Fatal("driver 2 seat not consumed")
+	}
+}
+
+func TestConfirmValidConsecutiveSegmentsSameRide(t *testing.T) {
+	st := testStore(t)
+	r := publishABC(t, st, 2)
+	res, err := st.ConfirmReservation("user-pass-1", "same-ride-legs", []domain.LegInput{
+		{RideID: r.RideID, Origin: "Salvador", Destination: "Feira de Santana"},
+		{RideID: r.RideID, Origin: "Feira de Santana", Destination: "Jequié"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != domain.ResConfirmed || len(res.Legs) != 2 {
+		t.Fatalf("%#v", res)
+	}
+	got := rideSeats(t, st, "user-driver-1", r.RideID)
+	if got[0] != 1 || got[1] != 1 {
+		t.Fatalf("want 1,1 got %v", got)
 	}
 }

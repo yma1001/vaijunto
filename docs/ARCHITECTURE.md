@@ -68,6 +68,6 @@ Na subida, o servidor lê `DATA_PATH`. Se o arquivo não existe, grava o seed de
 ## Onde está o código
 
 - Accept + sessão: `internal/server/server.go`
-- Confirmação atômica: `internal/store/reserve.go` (`ConfirmReservation`)
+- Confirmação atômica: `internal/store/reserve.go` (`ConfirmReservation`). Expande legs em segmentos, rejeita `(rideId, segmentIndex)` repetido e só então decrementa.
 - Grafo: `internal/search/graph.go`
 - Framing: `internal/protocol/frame.go`

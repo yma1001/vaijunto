@@ -93,12 +93,21 @@ Docker: Docker Desktop. `docker build` / `docker compose` no PowerShell; `bash s
 | Round-trip, mensagens coalescidas, read de 1 byte | `internal/protocol/frame_test.go` |
 | Header/payload incompletos, frame grande demais | idem + `TestIncompleteFrameAndAbruptDisconnect` |
 | JSON inválido, op desconhecida | `internal/server/server_test.go` |
+| JSON inválido no CONFIRM via TCP (estado intacto) | `TestInvalidConfirmJSONOverTCPDoesNotMutate` |
 | Itinerário direto e composto, data, vaga 0 | `internal/search/graph_test.go` |
 | Último assento (32 goroutines) | `TestLastSeatContention` |
 | Último trecho indisponível → sem reserva parcial | `TestAtomicLastSegmentUnavailable` |
 | CONFIRM simultâneo via TCP real | `TestSimultaneousConfirmTCP` |
 | Cancelar duas vezes | `TestCancelIdempotent` |
 | Mesmo requestId duas vezes | `TestConfirmIdempotentRequestID` / `TestRepeatedConfirmSameRequestIDOverTCP` |
+| Leg idêntica repetida, capacidade 1 (não vai a −1) | `TestConfirmRejectsDuplicateIdenticalLegCapacity1` |
+| Leg idêntica repetida, capacidade > 1 | `TestConfirmRejectsDuplicateIdenticalLegCapacityGreaterThan1` |
+| Sobreposição parcial de segmentos (A→C e B→C) | `TestConfirmRejectsPartialSegmentOverlap` |
+| Rejeição não muta assentos/reservas/arquivo | `TestConfirmRejectLeavesSeatsReservationsAndFileUnchanged` |
+| Itinerário desconectado / datas diferentes | `TestConfirmRejectsDisconnectedItinerary`, `TestConfirmRejectsIncompatibleDates` |
+| Composto válido de motoristas distintos | `TestConfirmValidCompositeDistinctDrivers` |
+| Dois legs consecutivos da mesma carona | `TestConfirmValidConsecutiveSegmentsSameRide` |
+| Leg duplicada via TCP real → VALIDATION_ERROR | `TestConfirmDuplicateLegsRejectedOverTCP` |
 | Disconnect no meio do frame | `TestIncompleteFrameAndAbruptDisconnect` |
 | Muitos clientes PING | `TestManyClients` |
 | Persistência + reinício do processo | `TestPersistenceRestartKeepsRides`, `TestPersistenceAcrossServerRestart` |

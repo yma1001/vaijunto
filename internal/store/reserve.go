@@ -10,14 +10,28 @@ func confirmKey(passengerID, requestID string) string {
 	return passengerID + "|" + requestID
 }
 
+type decrement struct {
+	rideID string
+	index  int
+}
+
+type segKey struct {
+	rideID string
+	index  int
+}
+
 // ConfirmReservation é a seção crítica da atomicidade (INV-3, INV-10).
 //
 // Passos, todos ainda sob s.mu.Lock:
 //  1. idempotência por (passenger, requestId) — retransmissão devolve a mesma reserva
-//  2. expandir cada leg em índices de segmento
-//  3. REVALIDAR disponibilidade de TODOS os trechos (a busca era só snapshot)
-//  4. se algum trecho falhar, nenhum é decrementado (tudo-ou-nada)
-//  5. decrementar todos, gravar reserva, persistir
+//  2. expandir cada leg em índices de segmento (caminho válido na carona)
+//  3. mesma data em todas as caronas (regra same-day da busca; DEC-009)
+//  4. rejeitar (rideId, segmentIndex) repetido no mesmo pedido — VALIDATION_ERROR,
+//     sem deduplicar em silêncio (evita decremento duplo / disponibilidade negativa)
+//  5. REVALIDAR disponibilidade de TODOS os trechos (a busca era só snapshot)
+//  6. legs consecutivas devem conectar destino → origem seguinte
+//  7. se qualquer checagem falhar: Unlock implícito no defer, estado intacto
+//  8. só então decrementar, gravar reserva, persistir
 func (s *Store) ConfirmReservation(passengerID, requestID string, inputs []domain.LegInput) (domain.Reservation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -33,52 +47,9 @@ func (s *Store) ConfirmReservation(passengerID, requestID string, inputs []domai
 		return domain.Reservation{}, fmt.Errorf("%w: legs required", ErrValidation)
 	}
 
-	type dec struct {
-		rideID string
-		index  int
-	}
-	var decrements []dec
-	var legs []domain.Leg
-	var total int64
-
-	for _, in := range inputs {
-		ride, ok := s.rides[in.RideID]
-		if !ok {
-			return domain.Reservation{}, fmt.Errorf("%w: ride %s", ErrNotFound, in.RideID)
-		}
-		if ride.Status != domain.RideActive {
-			return domain.Reservation{}, fmt.Errorf("%w: ride %s not active", ErrConflict, in.RideID)
-		}
-		idxs, ok := domain.SegmentIndexesBetween(ride.Cities, in.Origin, in.Destination)
-		if !ok {
-			return domain.Reservation{}, fmt.Errorf("%w: %s -> %s not on ride %s", ErrValidation, in.Origin, in.Destination, in.RideID)
-		}
-		var price int64
-		minAvail := ride.Capacity
-		for _, si := range idxs {
-			seg := ride.Segments[si]
-			if seg.AvailableSeats < 1 {
-				// Falha no último trecho (ou em qualquer um): aborta SEM mutar.
-				return domain.Reservation{}, ErrNoSeats
-			}
-			if seg.AvailableSeats < minAvail {
-				minAvail = seg.AvailableSeats
-			}
-			decrements = append(decrements, dec{rideID: ride.RideID, index: si})
-			price += seg.Price
-		}
-		legs = append(legs, domain.Leg{
-			RideID:         ride.RideID,
-			DriverID:       ride.DriverID,
-			Origin:         ride.Cities[idxs[0]],
-			Destination:    ride.Cities[idxs[len(idxs)-1]+1],
-			DepartureDate:  ride.DepartureDate,
-			DepartureTime:  ride.DepartureTime,
-			Price:          price,
-			AvailableSeats: minAvail,
-			SegmentIndexes: idxs,
-		})
-		total += price
+	decrements, legs, total, err := s.planConfirmLocked(inputs)
+	if err != nil {
+		return domain.Reservation{}, err
 	}
 
 	for _, d := range decrements {
@@ -112,6 +83,75 @@ func (s *Store) ConfirmReservation(passengerID, requestID string, inputs []domai
 		return domain.Reservation{}, err
 	}
 	return domain.CopyReservation(res), nil
+}
+
+// planConfirmLocked valida o pedido inteiro e monta a lista de decrementos.
+// Não muta rides, reservations, confirmIndex nem o arquivo.
+func (s *Store) planConfirmLocked(inputs []domain.LegInput) ([]decrement, []domain.Leg, int64, error) {
+	var decrements []decrement
+	var legs []domain.Leg
+	var total int64
+	seen := map[segKey]struct{}{}
+	var prevDest string
+	var itineraryDate string
+
+	for i, in := range inputs {
+		ride, ok := s.rides[in.RideID]
+		if !ok {
+			return nil, nil, 0, fmt.Errorf("%w: ride %s", ErrNotFound, in.RideID)
+		}
+		if ride.Status != domain.RideActive {
+			return nil, nil, 0, fmt.Errorf("%w: ride %s not active", ErrConflict, in.RideID)
+		}
+		idxs, ok := domain.SegmentIndexesBetween(ride.Cities, in.Origin, in.Destination)
+		if !ok {
+			return nil, nil, 0, fmt.Errorf("%w: %s -> %s not on ride %s", ErrValidation, in.Origin, in.Destination, in.RideID)
+		}
+		origin := ride.Cities[idxs[0]]
+		dest := ride.Cities[idxs[len(idxs)-1]+1]
+		if itineraryDate == "" {
+			itineraryDate = ride.DepartureDate
+		} else if ride.DepartureDate != itineraryDate {
+			return nil, nil, 0, fmt.Errorf("%w: incompatible dates %s vs %s", ErrValidation, itineraryDate, ride.DepartureDate)
+		}
+
+		var price int64
+		minAvail := ride.Capacity
+		for _, si := range idxs {
+			key := segKey{rideID: ride.RideID, index: si}
+			if _, dup := seen[key]; dup {
+				return nil, nil, 0, fmt.Errorf("%w: overlapping segment %s[%d]", ErrValidation, ride.RideID, si)
+			}
+			seen[key] = struct{}{}
+			seg := ride.Segments[si]
+			if seg.AvailableSeats < 1 {
+				// Falha no último trecho (ou em qualquer um): aborta SEM mutar.
+				return nil, nil, 0, ErrNoSeats
+			}
+			if seg.AvailableSeats < minAvail {
+				minAvail = seg.AvailableSeats
+			}
+			decrements = append(decrements, decrement{rideID: ride.RideID, index: si})
+			price += seg.Price
+		}
+		if i > 0 && !domain.CitiesEqual(prevDest, origin) {
+			return nil, nil, 0, fmt.Errorf("%w: disconnected itinerary (%s -> %s)", ErrValidation, prevDest, origin)
+		}
+		legs = append(legs, domain.Leg{
+			RideID:         ride.RideID,
+			DriverID:       ride.DriverID,
+			Origin:         origin,
+			Destination:    dest,
+			DepartureDate:  ride.DepartureDate,
+			DepartureTime:  ride.DepartureTime,
+			Price:          price,
+			AvailableSeats: minAvail,
+			SegmentIndexes: idxs,
+		})
+		total += price
+		prevDest = dest
+	}
+	return decrements, legs, total, nil
 }
 
 // CancelReservation é idempotente (INV-4): repetir o cancelamento NÃO
