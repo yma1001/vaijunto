@@ -15,7 +15,26 @@ Senha de todas: `senha123`
 
 Preços em **centavos** (1500 = R$ 15,00).
 
+## Pré-requisitos
+
+Quem clona [https://github.com/yma1001/vaijunto](https://github.com/yma1001/vaijunto) precisa de:
+
+- **Go 1.22 ou mais novo** (o `go.mod` declara `go 1.22`; confira com `go version`)
+- **git**
+- **Docker** opcional (demo em container)
+
+Instale o Go em [https://go.dev/dl/](https://go.dev/dl/). Detalhes por sistema nas seções abaixo.
+
+```bash
+git clone https://github.com/yma1001/vaijunto.git
+cd vaijunto
+```
+
+O caminho mais claro é **Linux** (laboratório da UEFS e a máquina do aluno). macOS e Windows repetem os mesmos testes, com as diferenças de instalação, variáveis de ambiente e nome dos binários.
+
 ## Build e teste
+
+Linux (primeiro caminho):
 
 ```bash
 go test ./...
@@ -25,25 +44,36 @@ go build -o bin/driver ./cmd/driver
 go build -o bin/passenger ./cmd/passenger
 ```
 
-## Rodar em um PC
+Os mesmos `go test ./...` e `go test -race ./...` valem em macOS. No Windows, veja a seção Windows (`bin\*.exe` e `$env:...`).
+
+## Rodar em um PC (Linux)
+
+Três terminais. Contas da tabela acima; senha `senha123`.
 
 Terminal 1:
 
 ```bash
-DATA_PATH=data/state.json ./bin/server
+export DATA_PATH=data/state.json
+./bin/server
 # escuta 0.0.0.0:5000
 ```
+
+(equivalente: `DATA_PATH=data/state.json ./bin/server`)
 
 Terminal 2 (motorista):
 
 ```bash
-SERVER_HOST=127.0.0.1 SERVER_PORT=5000 ./bin/driver
+export SERVER_HOST=127.0.0.1
+export SERVER_PORT=5000
+./bin/driver
 ```
 
 Terminal 3 (passageiro):
 
 ```bash
-SERVER_HOST=127.0.0.1 SERVER_PORT=5000 ./bin/passenger
+export SERVER_HOST=127.0.0.1
+export SERVER_PORT=5000
+./bin/passenger
 ```
 
 Smoke automático (última vaga + persistência):
@@ -58,7 +88,98 @@ Cliente em outra linguagem:
 python3 examples/python_ping.py 127.0.0.1 5000
 ```
 
+## macOS
+
+Instale o Go com Homebrew (`brew install go`) ou pelo pacote em [https://go.dev/dl/](https://go.dev/dl/). `go version` deve ser 1.22 ou mais novo.
+
+Clone, testes e build são iguais aos do Linux. Variáveis: os mesmos `export SERVER_HOST`, `SERVER_PORT` e `DATA_PATH`.
+
+Três terminais. Senha da demo: `senha123`.
+
+Terminal 1:
+
+```bash
+export DATA_PATH=data/state.json
+./bin/server
+```
+
+Terminal 2:
+
+```bash
+export SERVER_HOST=127.0.0.1
+export SERVER_PORT=5000
+./bin/driver
+```
+
+Terminal 3:
+
+```bash
+export SERVER_HOST=127.0.0.1
+export SERVER_PORT=5000
+./bin/passenger
+```
+
+Smoke: `bash scripts/smoke.sh` (funciona no Terminal do macOS).
+
+Docker: [Docker Desktop](https://www.docker.com/products/docker-desktop/). Com o daemon no ar, os comandos da seção Docker abaixo são os mesmos.
+
+## Windows
+
+Instale o Go (msi) em [https://go.dev/dl/](https://go.dev/dl/) e o [Git for Windows](https://git-scm.com/download/win) (traz Git Bash). `go version` ≥ 1.22.
+
+O **Git Bash** segue os comandos Linux (`export`, `./bin/server`, `bash scripts/smoke.sh`).
+
+No **PowerShell**, as variáveis são `$env:SERVER_HOST`, `$env:SERVER_PORT` e `$env:DATA_PATH` (uma janela não herda a da outra). Os binários ficam em `bin\` com sufixo `.exe`.
+
+```powershell
+git clone https://github.com/yma1001/vaijunto.git
+cd vaijunto
+go test ./...
+go test -race ./...
+go build -o bin/server.exe ./cmd/server
+go build -o bin/driver.exe ./cmd/driver
+go build -o bin/passenger.exe ./cmd/passenger
+```
+
+Se `go test -race` falhar pedindo CGO/gcc, instale um gcc (MinGW-w64) ou rode no Git Bash/WSL. `go test ./...` continua válido.
+
+Três janelas do PowerShell. Senha da demo: `senha123`.
+
+Janela 1 (servidor):
+
+```powershell
+$env:DATA_PATH = "data/state.json"
+.\bin\server.exe
+# escuta 0.0.0.0:5000
+```
+
+Janela 2 (motorista):
+
+```powershell
+$env:SERVER_HOST = "127.0.0.1"
+$env:SERVER_PORT = "5000"
+.\bin\driver.exe
+```
+
+Janela 3 (passageiro):
+
+```powershell
+$env:SERVER_HOST = "127.0.0.1"
+$env:SERVER_PORT = "5000"
+.\bin\passenger.exe
+```
+
+Smoke: no Git Bash, `bash scripts/smoke.sh`. No PowerShell nativo o script bash não roda; use `go test ./...` e a demo dos três `.exe`.
+
+Firewall: em `127.0.0.1` em geral não pede nada. Se outro PC não conectar, libere **TCP 5000** no Windows Defender Firewall (e permita o `server.exe` se o Defender perguntar).
+
+Docker: Docker Desktop para Windows. `docker build` / `docker compose` no PowerShell; `bash scripts/docker-local.sh` no Git Bash.
+
+Cliente Python: `python examples/python_ping.py 127.0.0.1 5000`.
+
 ## Docker (mesma máquina)
+
+Linux: Docker Engine. macOS e Windows: Docker Desktop. O script abaixo é bash (no Windows, Git Bash).
 
 Script único (build + smoke + `docker restart` + persistência). O container do servidor permanece no ar:
 
@@ -77,6 +198,8 @@ docker compose up -d
 Clientes no host apontam para `127.0.0.1:5000`.
 
 ## Docker em três PCs do laboratório
+
+O laboratório da UEFS é **Linux** (comandos abaixo). Cliente em macOS ou Windows: compile `driver`/`passenger` nessa máquina e aponte `SERVER_HOST` para o IP do PC A (`export SERVER_HOST=<IP do PC A>` no macOS/Linux; `$env:SERVER_HOST = "<IP do PC A>"` no PowerShell). O protocolo TCP é o mesmo.
 
 ```mermaid
 flowchart TB
