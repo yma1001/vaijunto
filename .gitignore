@@ -1,11 +1,39 @@
+# Binários gerados
 bin/
-data/*.json
-data/*.tmp
+dist/
 *.exe
-.DS_Store
-coverage.out
+*.out
 vaijunto-server
 vaijunto-driver
 vaijunto-passenger
 vaijunto-loadtest
+vaijunto-smoke
+vaijunto-*
 
+# Segredos e credenciais
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.token
+*token*
+tokens/
+secrets/
+credentials.json
+hottok*
+*_password*
+*password*
+passwords.txt
+
+# Estado persistido em runtime (não versionar)
+data/*.json
+data/*.tmp
+
+# Sistema e cobertura
+.DS_Store
+coverage.out
+coverage.html
+coverage/
+*.cover
+*.test
