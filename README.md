@@ -127,9 +127,6 @@ Persistência no Docker: o volume `vaijunto-data` sobrevive a `docker rm`. A ses
 | `docs/CONCURRENCY.md` | locks, atomicidade, invariantes |
 | `docs/DECISIONS.md` | decisões de projeto vs enunciado |
 | `docs/TESTING.md` | como testar |
-| `STUDY_GUIDE.md` | estudo dirigido |
-| `DEFESA_ORAL.md` | 11 itens do barema |
-| `CHAT.md` | contexto mestre do grupo |
 
 ## Layout do código
 
