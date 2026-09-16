@@ -4,7 +4,7 @@
 Yago Mendes e demais membros do grupo (UEFS)  
 Entrega: 17/09/2026
 
-Este texto está dimensionado para o limite de **8 páginas** do formato SBC. Pode ser colado no template oficial (`sbc-template`) para gerar o PDF.
+Este texto está dimensionado para o limite de **8 páginas** do formato SBC. Pode ser colado no template oficial (`sbc-template`) para gerar o PDF. Sem o `.sty` oficial da SBC neste repositório, o PDF não é compilado — o entregável versionado é este Markdown.
 
 ---
 

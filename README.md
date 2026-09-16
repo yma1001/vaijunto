@@ -60,6 +60,14 @@ python3 examples/python_ping.py 127.0.0.1 5000
 
 ## Docker (mesma máquina)
 
+Script único (build + smoke + `docker restart` + persistência). O container do servidor permanece no ar:
+
+```bash
+bash scripts/docker-local.sh
+```
+
+Equivalente manual:
+
 ```bash
 docker build -t vaijunto-server --build-arg BUILD_TARGET=server .
 docker compose up -d

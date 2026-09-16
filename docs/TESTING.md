@@ -7,6 +7,7 @@ go test ./...
 go test -race ./...
 go vet ./...
 bash scripts/smoke.sh
+bash scripts/docker-local.sh   # servidor em container + smoke + restart
 ```
 
 O race detector encontra data races, não deadlock lógico nem double-booking. Por isso existem testes de invariante e de disputa.
@@ -29,6 +30,11 @@ O race detector encontra data races, não deadlock lógico nem double-booking. P
 | Persistência + reinício do processo | `TestPersistenceRestartKeepsRides`, `TestPersistenceAcrossServerRestart` |
 | Invariantes ≥0 e ≤capacity | `TestNeverNegativeOrAboveCapacity` |
 | Carga / latência | `TestLoadishLatencyReported`, `cmd/loadtest` |
+| Busca não reserva (INV-5) | `TestSearchDoesNotReserve` |
+| Itinerário composto via TCP | `TestCompositeSearchAndConfirmTCP` |
+| REGISTER + LOGOUT fecha a conexão | `TestRegisterLoginLogout` |
+| Motorista cancela carona (passageiro vê CANCELLED) | `TestDriverCancelRideTCP` |
+| Validação do envelope | `internal/protocol/message_test.go` |
 
 ## Loadtest
 
