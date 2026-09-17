@@ -7,6 +7,7 @@ import (
 	"github.com/yma1001/vaijunto/internal/server"
 )
 
+// TestLogoutClearsIdentityAndReconnects: LOGOUT fecha o TCP, zera o cache local e abre socket novo.
 func TestLogoutClearsIdentityAndReconnects(t *testing.T) {
 	cfg, _, _ := server.StartTestServer(t)
 	c, err := Dial(cfg)
@@ -37,6 +38,7 @@ func TestLogoutClearsIdentityAndReconnects(t *testing.T) {
 	}
 }
 
+// TestLogoutDoesNotDeleteAccounts: sair da sessão não apaga a conta no JSON.
 func TestLogoutDoesNotDeleteAccounts(t *testing.T) {
 	cfg, st, _ := server.StartTestServer(t)
 	c, err := Dial(cfg)

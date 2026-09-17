@@ -1,3 +1,5 @@
+// Cliente motorista (CLI). Publica carona, lista, vê passageiros por trecho e cancela.
+// Fala o mesmo protocolo TCP do passageiro; o papel DRIVER restringe as operações.
 package main
 
 import (
@@ -14,6 +16,7 @@ import (
 	"github.com/yma1001/vaijunto/internal/protocol"
 )
 
+// main conecta em SERVER_HOST:SERVER_PORT e entra no menu do motorista.
 func main() {
 	cfg := config.Load()
 	fmt.Printf("VAIJUNTO — cliente MOTORISTA\nServidor: %s\n\n", cfg.ServerAddr())
@@ -26,6 +29,7 @@ func main() {
 	run(c, os.Stdin, os.Stdout)
 }
 
+// run é o loop dos menus (entrada/cadastro e, depois do LOGIN, as operações de motorista).
 func run(c *client.Client, in io.Reader, out io.Writer) {
 	prompt := cliui.NewPrompter(in, out)
 	read := prompt.Read
@@ -190,6 +194,7 @@ func run(c *client.Client, in io.Reader, out io.Writer) {
 	}
 }
 
+// loadDriverRides pede LIST_DRIVER_RIDES ao servidor (não usa cache local como fonte de verdade).
 func loadDriverRides(c *client.Client) ([]protocol.RideView, error) {
 	var out protocol.ListDriverRidesResult
 	if err := c.MustOK(protocol.OpListDriverRides, map[string]any{}, &out); err != nil {
@@ -199,6 +204,7 @@ func loadDriverRides(c *client.Client) ([]protocol.RideView, error) {
 	return out.Rides, nil
 }
 
+// ensureRides reaproveita a última listagem se o motorista acabou de ver as caronas.
 func ensureRides(c *client.Client, last []protocol.RideView) ([]protocol.RideView, error) {
 	if len(last) > 0 {
 		return last, nil
@@ -206,6 +212,7 @@ func ensureRides(c *client.Client, last []protocol.RideView) ([]protocol.RideVie
 	return loadDriverRides(c)
 }
 
+// printDriverRides mostra cada carona com os passageiros confirmados por trecho.
 func printDriverRides(w io.Writer, c *client.Client, rides []protocol.RideView) {
 	if len(rides) == 0 {
 		fmt.Fprintln(w, "nenhuma carona publicada")
@@ -217,6 +224,7 @@ func printDriverRides(w io.Writer, c *client.Client, rides []protocol.RideView) 
 	}
 }
 
+// loadPassengers pede os confirmados daquela carona, agrupados por trecho.
 func loadPassengers(c *client.Client, rideID string) (*protocol.ListRidePassengersResult, error) {
 	var out protocol.ListRidePassengersResult
 	if err := c.MustOK(protocol.OpListRidePassengers, protocol.ListRidePassengersData{RideID: rideID}, &out); err != nil {
@@ -225,6 +233,7 @@ func loadPassengers(c *client.Client, rideID string) (*protocol.ListRidePassenge
 	return &out, nil
 }
 
+// pickRide interpreta o número (ou o rideId) que o motorista digitou na lista.
 func pickRide(input string, rides []protocol.RideView) (int, error) {
 	if len(rides) == 0 {
 		return -1, fmt.Errorf("nenhuma carona na lista")

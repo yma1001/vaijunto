@@ -1,3 +1,6 @@
+// Pacote server é o processo TCP: Listen/Accept, uma goroutine por conexão,
+// sessão (login) presa no socket e dispatch das operações do protocolo.
+// O mutex do Store NÃO envolve Read/Write do socket.
 package server
 
 import (
@@ -28,11 +31,12 @@ type Session struct {
 	Role          string
 }
 
+// Server guarda o listener, o Store e o mapa de conexões ativas para o shutdown.
 type Server struct {
-	cfg  config.Config
-	svc  *service.Service
-	st   *store.Store
-	log  *log.Logger
+	cfg config.Config
+	svc *service.Service
+	st  *store.Store
+	log *log.Logger
 
 	ln net.Listener
 
@@ -40,6 +44,7 @@ type Server struct {
 	conns map[net.Conn]struct{}
 }
 
+// New monta o servidor em cima de um Store já carregado (JSON ou seed).
 func New(cfg config.Config, st *store.Store, logger *log.Logger) *Server {
 	if logger == nil {
 		logger = logStd()
@@ -53,12 +58,15 @@ func New(cfg config.Config, st *store.Store, logger *log.Logger) *Server {
 	}
 }
 
+// logStd é o logger padrão do processo (prefixo [vaijunto], horário com microssegundos).
 func logStd() *log.Logger {
 	return log.New(os.Stdout, "[vaijunto] ", log.LstdFlags|log.Lmicroseconds)
 }
 
+// Store expõe o estado aos testes (invariantes, persistência).
 func (s *Server) Store() *store.Store { return s.st }
 
+// Addr devolve host:porta reais depois do Listen (porta 0 nos testes).
 func (s *Server) Addr() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -68,6 +76,7 @@ func (s *Server) Addr() string {
 	return s.ln.Addr().String()
 }
 
+// ListenAndServe faz bind em LISTEN_HOST:SERVER_PORT (default 0.0.0.0:5000) e entra no Accept.
 func (s *Server) ListenAndServe() error {
 	ln, err := net.Listen("tcp", s.cfg.ListenAddr())
 	if err != nil {
@@ -76,6 +85,7 @@ func (s *Server) ListenAndServe() error {
 	return s.Serve(ln)
 }
 
+// Serve é o loop de Accept. Cada cliente vira uma goroutine; o loop volta a aceitar na hora.
 func (s *Server) Serve(ln net.Listener) error {
 	s.mu.Lock()
 	s.ln = ln
@@ -97,6 +107,7 @@ func (s *Server) Serve(ln net.Listener) error {
 	}
 }
 
+// Close encerra o listener e todas as conexões rastreadas (shutdown / testes).
 func (s *Server) Close() error {
 	s.mu.Lock()
 	ln := s.ln
@@ -113,6 +124,7 @@ func (s *Server) Close() error {
 	return nil
 }
 
+// track registra ou remove a conexão do mapa usado pelo Close.
 func (s *Server) track(c net.Conn, add bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -123,6 +135,8 @@ func (s *Server) track(c net.Conn, add bool) {
 	}
 }
 
+// handleConnection é o ciclo request/response de UM cliente.
+// defer fecha o socket e recupera panic para um cliente morto não derrubar o processo.
 func (s *Server) handleConnection(conn net.Conn) {
 	defer s.track(conn, false)
 	defer conn.Close()
@@ -160,6 +174,8 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 }
 
+// dispatch decodifica o JSON, valida o envelope e encaminha à operação.
+// JSON inválido vira INVALID_JSON sem tocar no Store.
 func (s *Server) dispatch(sess *Session, raw []byte) protocol.Response {
 	req, err := protocol.DecodeRequest(raw)
 	if err != nil {
@@ -223,6 +239,7 @@ func (s *Server) dispatch(sess *Session, raw []byte) protocol.Response {
 	}
 }
 
+// require exige LOGIN prévio e o papel certo (DRIVER vs PASSENGER).
 func (s *Server) require(sess *Session, req *protocol.Request, role string) (protocol.Response, bool) {
 	if !sess.Authenticated {
 		return protocol.Error(req.RequestID, protocol.CodeUnauthenticated, "login required"), false
@@ -233,6 +250,7 @@ func (s *Server) require(sess *Session, req *protocol.Request, role string) (pro
 	return protocol.Response{}, true
 }
 
+// opRegister cria a conta e persiste. Não autentica a conexão; o cliente faz LOGIN depois.
 func (s *Server) opRegister(req *protocol.Request) protocol.Response {
 	var in protocol.RegisterData
 	if err := json.Unmarshal(nonzero(req.Data), &in); err != nil {
@@ -245,6 +263,7 @@ func (s *Server) opRegister(req *protocol.Request) protocol.Response {
 	return protocol.OK(req.RequestID, protocol.RegisterResult{UserID: u.UserID, Username: u.Username, Role: u.Role})
 }
 
+// opLogin autentica e grava userId/role na Session desta conexão TCP (sem token no JSON).
 func (s *Server) opLogin(sess *Session, req *protocol.Request) protocol.Response {
 	var in protocol.LoginData
 	if err := json.Unmarshal(nonzero(req.Data), &in); err != nil {
@@ -261,11 +280,13 @@ func (s *Server) opLogin(sess *Session, req *protocol.Request) protocol.Response
 	return protocol.OK(req.RequestID, protocol.LoginResult{UserID: u.UserID, Username: u.Username, Role: u.Role})
 }
 
+// opLogout responde "bye" e marca a sessão para o loop fechar o socket em seguida.
 func (s *Server) opLogout(sess *Session, req *protocol.Request) protocol.Response {
 	*sess = Session{Role: "CLOSING"}
 	return protocol.OK(req.RequestID, map[string]string{"message": "bye"})
 }
 
+// opPublishRide cria a carona do motorista autenticado (rota, data, capacidade, preços).
 func (s *Server) opPublishRide(sess *Session, req *protocol.Request) protocol.Response {
 	var in protocol.PublishRideData
 	if err := json.Unmarshal(nonzero(req.Data), &in); err != nil {
@@ -278,6 +299,7 @@ func (s *Server) opPublishRide(sess *Session, req *protocol.Request) protocol.Re
 	return protocol.OK(req.RequestID, service.RideView(ride))
 }
 
+// opListDriverRides lista as caronas publicadas por este motorista.
 func (s *Server) opListDriverRides(sess *Session, req *protocol.Request) protocol.Response {
 	rides := s.st.ListDriverRides(sess.UserID)
 	views := make([]protocol.RideView, 0, len(rides))
@@ -287,6 +309,7 @@ func (s *Server) opListDriverRides(sess *Session, req *protocol.Request) protoco
 	return protocol.OK(req.RequestID, protocol.ListDriverRidesResult{Rides: views})
 }
 
+// opCancelRide cancela a carona inteira e as reservas que a usam.
 func (s *Server) opCancelRide(sess *Session, req *protocol.Request) protocol.Response {
 	var in protocol.CancelRideData
 	if err := json.Unmarshal(nonzero(req.Data), &in); err != nil {
@@ -299,6 +322,7 @@ func (s *Server) opCancelRide(sess *Session, req *protocol.Request) protocol.Res
 	return protocol.OK(req.RequestID, service.RideView(ride))
 }
 
+// opListRidePassengers devolve os passageiros confirmados agrupados por trecho.
 func (s *Server) opListRidePassengers(sess *Session, req *protocol.Request) protocol.Response {
 	var in protocol.ListRidePassengersData
 	if err := json.Unmarshal(nonzero(req.Data), &in); err != nil {
@@ -330,6 +354,7 @@ func (s *Server) opListRidePassengers(sess *Session, req *protocol.Request) prot
 	return protocol.OK(req.RequestID, out)
 }
 
+// opSearch monta o grafo a partir do snapshot e devolve itinerários; não decrementa vaga.
 func (s *Server) opSearch(_ *Session, req *protocol.Request) protocol.Response {
 	var in protocol.SearchItinerariesData
 	if err := json.Unmarshal(nonzero(req.Data), &in); err != nil {
@@ -346,6 +371,7 @@ func (s *Server) opSearch(_ *Session, req *protocol.Request) protocol.Response {
 	return protocol.OK(req.RequestID, protocol.SearchItinerariesResult{Itineraries: views})
 }
 
+// opConfirm pede a reserva atômica no Store (revalida todos os trechos sob Lock).
 func (s *Server) opConfirm(sess *Session, req *protocol.Request) protocol.Response {
 	var in protocol.ConfirmReservationData
 	if err := json.Unmarshal(nonzero(req.Data), &in); err != nil {
@@ -362,6 +388,7 @@ func (s *Server) opConfirm(sess *Session, req *protocol.Request) protocol.Respon
 	return protocol.OK(req.RequestID, protocol.ConfirmReservationResult{Reservation: service.ReservationView(res)})
 }
 
+// opListReservations lê as reservas do passageiro da sessão (depois de um restart, LOGIN + esta op).
 func (s *Server) opListReservations(sess *Session, req *protocol.Request) protocol.Response {
 	list := s.st.ListReservations(sess.UserID)
 	views := make([]protocol.ReservationView, 0, len(list))
@@ -371,6 +398,7 @@ func (s *Server) opListReservations(sess *Session, req *protocol.Request) protoc
 	return protocol.OK(req.RequestID, protocol.ListReservationsResult{Reservations: views})
 }
 
+// opCancelReservation devolve os assentos uma vez; repetir o cancelamento não soma vaga de novo.
 func (s *Server) opCancelReservation(sess *Session, req *protocol.Request) protocol.Response {
 	var in protocol.CancelReservationData
 	if err := json.Unmarshal(nonzero(req.Data), &in); err != nil {
@@ -383,6 +411,7 @@ func (s *Server) opCancelReservation(sess *Session, req *protocol.Request) proto
 	return protocol.OK(req.RequestID, protocol.CancelReservationResult{Reservation: service.ReservationView(res)})
 }
 
+// mapErr traduz erros do Store (NO_SEATS, NOT_FOUND, …) para o envelope do protocolo.
 func mapErr(requestID string, err error) protocol.Response {
 	switch {
 	case errors.Is(err, store.ErrNoSeats):
@@ -404,6 +433,7 @@ func mapErr(requestID string, err error) protocol.Response {
 	}
 }
 
+// nonzero trata data omitido no JSON como objeto vazio, para PING/LIST sem corpo.
 func nonzero(raw json.RawMessage) []byte {
 	if len(raw) == 0 {
 		return []byte("{}")

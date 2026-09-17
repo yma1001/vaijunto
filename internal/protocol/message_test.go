@@ -2,6 +2,7 @@ package protocol
 
 import "testing"
 
+// TestRequestValidate: version ≠ 1 ou operation vazia são rejeitados no envelope.
 func TestRequestValidate(t *testing.T) {
 	ok := &Request{Version: 1, Operation: "PING", RequestID: "a"}
 	if err := ok.Validate(); err != nil {
@@ -17,6 +18,7 @@ func TestRequestValidate(t *testing.T) {
 	}
 }
 
+// TestPeekRequestID: tenta ecoar o correlator mesmo com JSON incompleto.
 func TestPeekRequestID(t *testing.T) {
 	if PeekRequestID([]byte(`{"requestId":"xyz","operation":"PING"}`)) != "xyz" {
 		t.Fatal("should extract requestId")
@@ -26,6 +28,7 @@ func TestPeekRequestID(t *testing.T) {
 	}
 }
 
+// TestErrorEnvelope: resposta ERROR carrega code e o mesmo requestId.
 func TestErrorEnvelope(t *testing.T) {
 	resp := Error("r1", CodeNoSeats, "full")
 	if resp.Status != StatusError || resp.Error.Code != CodeNoSeats || resp.RequestID != "r1" {

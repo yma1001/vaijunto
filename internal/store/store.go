@@ -1,3 +1,7 @@
+// Pacote store é o estado canônico do servidor: usuários, caronas e reservas.
+// Um único sync.RWMutex protege os mapas. Leituras (busca, listagens, login)
+// usam RLock; escritas (publicar, confirmar, cancelar, cadastrar) usam Lock.
+// A persistência JSON é gravada ainda sob o Lock, depois da mutação.
 package store
 
 import (
@@ -60,6 +64,7 @@ type persistedState struct {
 	ConfirmIndex map[string]string    `json:"confirmIndex"`
 }
 
+// New abre (ou cria com o seed) o arquivo de estado e devolve o Store pronto.
 func New(path string) (*Store, error) {
 	abs, err := resolveDataPath(path)
 	if err != nil {
@@ -90,8 +95,10 @@ func resolveDataPath(path string) (string, error) {
 	return filepath.Abs(path)
 }
 
+// Path devolve o caminho absoluto do JSON (aparece no log na subida do servidor).
 func (s *Store) Path() string { return s.path }
 
+// loadOrSeed lê o arquivo; se não existir, grava as contas seed (motorista1…).
 func (s *Store) loadOrSeed() error {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
@@ -123,6 +130,7 @@ func (s *Store) loadOrSeed() error {
 	return nil
 }
 
+// seedUsersLocked cria as cinco contas de demo. Chamado só com o lock (ou na subida).
 func (s *Store) seedUsersLocked() {
 	seeds := []domain.User{
 		{UserID: "user-driver-1", Username: "motorista1", Password: "senha123", Role: protocol.RoleDriver},
@@ -154,6 +162,8 @@ func (s *Store) rebuildIndexesLocked() {
 	}
 }
 
+// persistLocked escreve users/rides/reservations num .tmp e faz rename atômico.
+// O caller já segura o Lock. JSON pela metade não aparece para o próximo load.
 func (s *Store) persistLocked() error {
 	st := persistedState{
 		Users:        make([]domain.User, 0, len(s.users)),
@@ -189,12 +199,14 @@ func (s *Store) persistLocked() error {
 	return os.Rename(tmp, s.path)
 }
 
+// newID gera um identificador (ride-, res-, user-) com 8 bytes aleatórios em hex.
 func newID(prefix string) string {
 	var b [8]byte
 	_, _ = rand.Read(b[:])
 	return prefix + hex.EncodeToString(b[:])
 }
 
+// Authenticate confere usuário e senha sob RLock. Não cria sessão: isso é o TCP.
 func (s *Store) Authenticate(username, password string) (domain.User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -205,6 +217,7 @@ func (s *Store) Authenticate(username, password string) (domain.User, error) {
 	return domain.CopyUser(u), nil
 }
 
+// UserByID busca a conta pelo identificador interno (listagem de passageiros).
 func (s *Store) UserByID(id string) (domain.User, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -212,6 +225,7 @@ func (s *Store) UserByID(id string) (domain.User, bool) {
 	return domain.CopyUser(u), ok
 }
 
+// Register cria uma conta persistida. Username duplicado devolve ErrAlreadyExists.
 func (s *Store) Register(username, password, role string) (domain.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -240,6 +254,8 @@ func (s *Store) Register(username, password, role string) (domain.User, error) {
 	return u, nil
 }
 
+// SnapshotRides copia as caronas sob RLock para a busca montar o grafo sem
+// segurar escritores durante o DFS.
 func (s *Store) SnapshotRides() []domain.Ride {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -250,6 +266,7 @@ func (s *Store) SnapshotRides() []domain.Ride {
 	return out
 }
 
+// ListDriverRides devolve as caronas daquele motorista (ativas e canceladas).
 func (s *Store) ListDriverRides(driverID string) []domain.Ride {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -262,6 +279,8 @@ func (s *Store) ListDriverRides(driverID string) []domain.Ride {
 	return out
 }
 
+// PublishRide cria a carona e um Segment por par adjacente, todos com
+// availableSeats = capacity. Cidades repetidas ou preços negativos são rejeitados.
 func (s *Store) PublishRide(driverID string, cities []string, date, timeOfDay string, capacity int, prices []int64) (domain.Ride, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -330,6 +349,7 @@ func (s *Store) PublishRide(driverID string, cities []string, date, timeOfDay st
 	return domain.CopyRide(ride), nil
 }
 
+// ListReservations lista as reservas daquele passageiro (confirmadas e canceladas).
 func (s *Store) ListReservations(passengerID string) []domain.Reservation {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -342,12 +362,14 @@ func (s *Store) ListReservations(passengerID string) []domain.Reservation {
 	return out
 }
 
+// CheckInvariants expõe INV-1/INV-2 para os testes (vagas nunca negativas nem acima da capacidade).
 func (s *Store) CheckInvariants() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.invariantsLocked()
 }
 
+// invariantsLocked percorre os trechos e registra vaga negativa ou acima da capacidade.
 func (s *Store) invariantsLocked() []string {
 	var viol []string
 	for _, ride := range s.rides {

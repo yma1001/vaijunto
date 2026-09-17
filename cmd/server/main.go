@@ -1,3 +1,8 @@
+// Servidor TCP central do VAIJUNTO.
+//
+// Sobe o Store (estado em memória + JSON) e o Accept loop. Motorista e
+// passageiro conectam neste processo; não há réplica nem conversa
+// cliente–cliente. SIGINT/SIGTERM fecham o listener e as conexões.
 package main
 
 import (
@@ -11,6 +16,7 @@ import (
 	"github.com/yma1001/vaijunto/internal/store"
 )
 
+// main carrega o JSON, escuta TCP e espera SIGINT/SIGTERM para fechar as conexões.
 func main() {
 	cfg := config.Load()
 	st, err := store.New(cfg.DataPath)

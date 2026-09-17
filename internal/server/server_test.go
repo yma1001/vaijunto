@@ -20,10 +20,12 @@ import (
 	"github.com/yma1001/vaijunto/internal/store"
 )
 
+// startTestServer é um atalho para StartTestServer nos testes deste arquivo.
 func startTestServer(t *testing.T) (config.Config, *store.Store, *Server) {
 	return StartTestServer(t)
 }
 
+// TestPingPong: PING sem login devolve PONG — o servidor está no ar.
 func TestPingPong(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	c, err := client.Dial(cfg)
@@ -36,6 +38,7 @@ func TestPingPong(t *testing.T) {
 	}
 }
 
+// TestLoginAndForbiddenRole: passageiro não publica carona (FORBIDDEN).
 func TestLoginAndForbiddenRole(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	c, _ := client.Dial(cfg)
@@ -54,6 +57,7 @@ func TestLoginAndForbiddenRole(t *testing.T) {
 	}
 }
 
+// TestUnknownOperation: operation inexistente não derruba a conexão.
 func TestUnknownOperation(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	c, _ := client.Dial(cfg)
@@ -70,6 +74,7 @@ func TestUnknownOperation(t *testing.T) {
 	}
 }
 
+// TestInvalidJSONDoesNotKillServer: JSON lixo gera INVALID_JSON; o próximo cliente ainda fala PING.
 func TestInvalidJSONDoesNotKillServer(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	conn, err := net.Dial("tcp", cfg.ServerAddr())
@@ -98,6 +103,7 @@ func TestInvalidJSONDoesNotKillServer(t *testing.T) {
 	}
 }
 
+// TestIncompleteFrameAndAbruptDisconnect: cliente some no meio do frame; o Accept loop segue vivo.
 func TestIncompleteFrameAndAbruptDisconnect(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	conn, err := net.Dial("tcp", cfg.ServerAddr())
@@ -121,6 +127,7 @@ func TestIncompleteFrameAndAbruptDisconnect(t *testing.T) {
 	}
 }
 
+// TestOversizedFrame: N absurdo não aloca gigabytes; o servidor continua.
 func TestOversizedFrame(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	conn, err := net.Dial("tcp", cfg.ServerAddr())
@@ -138,6 +145,7 @@ func TestOversizedFrame(t *testing.T) {
 	}
 }
 
+// publishSample publica Salvador→Feira→Jequié com 1 vaga, para os testes TCP.
 func publishSample(t *testing.T, cfg config.Config) protocol.RideView {
 	t.Helper()
 	d, err := client.Dial(cfg)
@@ -159,6 +167,7 @@ func publishSample(t *testing.T, cfg config.Config) protocol.RideView {
 	return ride
 }
 
+// TestSearchAndConfirmAndCancelTCP: fluxo feliz completo e cancelamento idempotente via socket.
 func TestSearchAndConfirmAndCancelTCP(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	ride := publishSample(t, cfg)
@@ -195,6 +204,7 @@ func TestSearchAndConfirmAndCancelTCP(t *testing.T) {
 	}
 }
 
+// TestSimultaneousConfirmTCP: 16 clientes TCP, 1 assento → exatamente 1 OK (o resto NO_SEATS).
 func TestSimultaneousConfirmTCP(t *testing.T) {
 	cfg, st, _ := startTestServer(t)
 	ride := publishSample(t, cfg)
@@ -237,6 +247,7 @@ func TestSimultaneousConfirmTCP(t *testing.T) {
 	}
 }
 
+// TestManyClients: 40 conexões paralelas de PING — goroutine por cliente.
 func TestManyClients(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	var wg sync.WaitGroup
@@ -263,6 +274,7 @@ func TestManyClients(t *testing.T) {
 	}
 }
 
+// TestPersistenceAcrossServerRestart: mata o processo, sobe outro no mesmo JSON, a carona continua.
 func TestPersistenceAcrossServerRestart(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -316,8 +328,8 @@ func TestPersistenceAcrossServerRestart(t *testing.T) {
 	}
 }
 
-// Confirm, persist, new Store+process, LOGIN as the same passenger, LIST_RESERVATIONS
-// must return the reservation. Session userId must match persisted passengerId.
+// TestListReservationsAfterServerRestart: depois do restart, LOGIN + LIST_RESERVATIONS
+// devolve a reserva. A sessão TCP morreu; a conta e a reserva estão no JSON.
 func TestListReservationsAfterServerRestart(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -406,6 +418,7 @@ func TestListReservationsAfterServerRestart(t *testing.T) {
 	}
 }
 
+// TestRepeatedConfirmSameRequestIDOverTCP: retransmitir o CONFIRM com o mesmo requestId não toma outra vaga.
 func TestRepeatedConfirmSameRequestIDOverTCP(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	ride := publishSample(t, cfg)
@@ -431,6 +444,7 @@ func TestRepeatedConfirmSameRequestIDOverTCP(t *testing.T) {
 	}
 }
 
+// TestConfirmDuplicateLegsRejectedOverTCP: legs repetidas via socket viram VALIDATION_ERROR.
 func TestConfirmDuplicateLegsRejectedOverTCP(t *testing.T) {
 	cfg, st, _ := startTestServer(t)
 	ride := publishSample(t, cfg)
@@ -458,6 +472,7 @@ func TestConfirmDuplicateLegsRejectedOverTCP(t *testing.T) {
 	}
 }
 
+// TestInvalidConfirmJSONOverTCPDoesNotMutate: CONFIRM com JSON quebrado não altera assentos.
 func TestInvalidConfirmJSONOverTCPDoesNotMutate(t *testing.T) {
 	cfg, st, _ := startTestServer(t)
 	_ = publishSample(t, cfg)
@@ -500,6 +515,7 @@ func readFile(t *testing.T, path string) []byte {
 	return b
 }
 
+// TestLoadishLatencyReported: vários clientes em paralelo; o teste só mede que o servidor responde.
 func TestLoadishLatencyReported(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	ride := publishSample(t, cfg)
@@ -536,6 +552,7 @@ func TestLoadishLatencyReported(t *testing.T) {
 	t.Logf("n=%d elapsed=%s avg=%s", n, elapsed, sum/time.Duration(n))
 }
 
+// TestUnauthenticatedSearch: SEARCH sem LOGIN devolve UNAUTHENTICATED.
 func TestUnauthenticatedSearch(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	c, _ := client.Dial(cfg)

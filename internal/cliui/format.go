@@ -24,6 +24,7 @@ func StatusPT(status string) string {
 	}
 }
 
+// FormatRide imprime a carona para o motorista (rota, vagas, passageiros por trecho).
 func FormatRide(index int, r protocol.RideView, passengers *protocol.ListRidePassengersResult) string {
 	var b strings.Builder
 	if index > 0 {
@@ -62,6 +63,7 @@ func FormatRide(index int, r protocol.RideView, passengers *protocol.ListRidePas
 	return b.String()
 }
 
+// FormatItinerary imprime uma opção da busca para o passageiro escolher pelo número.
 func FormatItinerary(index int, it protocol.ItineraryView) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Itinerário [%d]\n", index)
@@ -90,6 +92,7 @@ func FormatItinerary(index int, it protocol.ItineraryView) string {
 	return b.String()
 }
 
+// FormatReservation imprime uma reserva confirmada ou cancelada, sem JSON cru.
 func FormatReservation(index int, r protocol.ReservationView) string {
 	var b strings.Builder
 	if index > 0 {
@@ -116,6 +119,7 @@ func FormatReservation(index int, r protocol.ReservationView) string {
 	return b.String()
 }
 
+// itineraryCities reconstitui a sequência origem→…→destino para o cabeçalho da busca.
 func itineraryCities(it protocol.ItineraryView) []string {
 	if len(it.Legs) == 0 {
 		return nil
@@ -127,6 +131,7 @@ func itineraryCities(it protocol.ItineraryView) []string {
 	return out
 }
 
+// reservationCities reconstitui a rota da reserva para o cabeçalho da listagem.
 func reservationCities(r protocol.ReservationView) []string {
 	if len(r.Legs) == 0 {
 		return nil
@@ -194,6 +199,7 @@ func FriendlyError(err error) string {
 	}
 }
 
+// isCommsMessage reconhece erros de socket para a CLI mostrar "falha de comunicação".
 func isCommsMessage(msg string) bool {
 	needles := []string{
 		"connection refused",

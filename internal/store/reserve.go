@@ -6,15 +6,18 @@ import (
 	"github.com/yma1001/vaijunto/internal/domain"
 )
 
+// confirmKey é a chave de idempotência do CONFIRM: o mesmo pedido não vende a vaga duas vezes.
 func confirmKey(passengerID, requestID string) string {
 	return passengerID + "|" + requestID
 }
 
+// decrement é um assento a descontar depois que o plano inteiro passou na revalidação.
 type decrement struct {
 	rideID string
 	index  int
 }
 
+// segKey identifica um trecho físico. Pedido com o mesmo par duas vezes é VALIDATION_ERROR.
 type segKey struct {
 	rideID string
 	index  int
@@ -180,6 +183,7 @@ func (s *Store) CancelReservation(passengerID, reservationID string) (domain.Res
 	return domain.CopyReservation(res), nil
 }
 
+// restoreReservationLocked devolve um assento em cada segmento da reserva, sem passar da capacity.
 func (s *Store) restoreReservationLocked(res domain.Reservation) {
 	for _, leg := range res.Legs {
 		ride, ok := s.rides[leg.RideID]
@@ -237,6 +241,7 @@ func (s *Store) CancelRide(driverID, rideID string) (domain.Ride, error) {
 	return domain.CopyRide(s.rides[rideID]), nil
 }
 
+// reservationUsesRide diz se alguma leg da reserva aponta para aquela carona.
 func reservationUsesRide(res domain.Reservation, rideID string) bool {
 	for _, leg := range res.Legs {
 		if leg.RideID == rideID {
@@ -246,6 +251,7 @@ func reservationUsesRide(res domain.Reservation, rideID string) bool {
 	return false
 }
 
+// ListRidePassengers agrupa passageiros confirmados por índice de trecho, para o motorista acompanhar.
 func (s *Store) ListRidePassengers(driverID, rideID string) (domain.Ride, [][]passengerSeat, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -280,12 +286,14 @@ func (s *Store) ListRidePassengers(driverID, rideID string) (domain.Ride, [][]pa
 	return domain.CopyRide(ride), bySeg, nil
 }
 
+// passengerSeat é o registro interno de quem ocupa um trecho.
 type passengerSeat struct {
 	UserID        string
 	Username      string
 	ReservationID string
 }
 
+// RidePassengers é a versão exportada usada pelo servidor na operação LIST_RIDE_PASSENGERS.
 func (s *Store) RidePassengers(driverID, rideID string) (domain.Ride, [][]PassengerOnSegment, error) {
 	ride, seats, err := s.ListRidePassengers(driverID, rideID)
 	if err != nil {
@@ -300,6 +308,7 @@ func (s *Store) RidePassengers(driverID, rideID string) (domain.Ride, [][]Passen
 	return ride, out, nil
 }
 
+// PassengerOnSegment é o que sai no JSON: userId, username e reservationId daquele trecho.
 type PassengerOnSegment struct {
 	UserID        string
 	Username      string

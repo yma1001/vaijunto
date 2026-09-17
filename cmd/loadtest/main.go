@@ -1,3 +1,5 @@
+// loadtest dispara N clientes TCP reais contra uma carona de 1 assento e
+// imprime sucessos, falhas, latência média e p95. Esperado: success=1.
 package main
 
 import (
@@ -94,7 +96,7 @@ func main() {
 	report := map[string]any{
 		"clients": n, "success": okN.Load(), "fail": failN.Load(),
 		"elapsed_ms": elapsed.Milliseconds(), "avg_ms": avg.Milliseconds(),
-		"p95_ms": p95.Milliseconds(),
+		"p95_ms":           p95.Milliseconds(),
 		"throughput_ops_s": float64(n) / elapsed.Seconds(),
 		"note":             "com capacity=1, success esperado = 1",
 	}

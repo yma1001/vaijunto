@@ -9,6 +9,7 @@ import (
 	"github.com/yma1001/vaijunto/internal/store"
 )
 
+// TestSearchDoesNotReserve: depois da busca as vagas continuam iguais (INV-5).
 func TestSearchDoesNotReserve(t *testing.T) {
 	cfg, st, _ := startTestServer(t)
 	ride := publishSample(t, cfg)
@@ -30,6 +31,7 @@ func TestSearchDoesNotReserve(t *testing.T) {
 	}
 }
 
+// TestCompositeSearchAndConfirmTCP: busca acha o composto e o CONFIRM reserva os dois motoristas.
 func TestCompositeSearchAndConfirmTCP(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	d, _ := client.Dial(cfg)
@@ -78,6 +80,7 @@ func TestCompositeSearchAndConfirmTCP(t *testing.T) {
 	}
 }
 
+// TestRegisterBothRolesDuplicateAndRestartTCP: cadastro via TCP persiste e username duplicado falha.
 func TestRegisterBothRolesDuplicateAndRestartTCP(t *testing.T) {
 	cfg, st, _ := startTestServer(t)
 	c, _ := client.Dial(cfg)
@@ -114,6 +117,7 @@ func TestRegisterBothRolesDuplicateAndRestartTCP(t *testing.T) {
 	}
 }
 
+// TestRegisterLoginLogout: LOGOUT fecha o TCP; PING na mesma conn falha.
 func TestRegisterLoginLogout(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	c, _ := client.Dial(cfg)
@@ -136,6 +140,7 @@ func TestRegisterLoginLogout(t *testing.T) {
 	}
 }
 
+// TestDriverCancelRideTCP: motorista cancela a carona; o passageiro vê a reserva CANCELLED.
 func TestDriverCancelRideTCP(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	ride := publishSample(t, cfg)

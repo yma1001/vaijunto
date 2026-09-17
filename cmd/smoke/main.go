@@ -1,3 +1,5 @@
+// smoke publica uma carona com 1 vaga e dois passageiros tentam confirmar.
+// Esperado: um OK e um NO_SEATS. Usado pelo scripts/smoke.sh e pelo Docker.
 package main
 
 import (
@@ -72,6 +74,7 @@ func main() {
 	fmt.Println("SMOKE OK")
 }
 
+// fatal aborta o smoke com mensagem em stderr (falha de dial, login ou publish).
 func fatal(f string, a ...any) {
 	fmt.Fprintf(os.Stderr, f+"\n", a...)
 	os.Exit(1)

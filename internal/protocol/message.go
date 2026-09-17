@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Request é o envelope de toda operação.
+// Request é o envelope de toda operação (version, operation, requestId, data).
 // Data fica como json.RawMessage para o dispatcher decodificar o payload
 // específico da operation sem um union type rígido.
 type Request struct {
@@ -16,6 +16,7 @@ type Request struct {
 	Data      json.RawMessage `json:"data"`
 }
 
+// Response ecoa o requestId. status OK carrega data; ERROR carrega error.code.
 type Response struct {
 	Version   int             `json:"version"`
 	RequestID string          `json:"requestId"`
@@ -24,6 +25,7 @@ type Response struct {
 	Error     *ErrorBody      `json:"error"`
 }
 
+// DecodeRequest faz o Unmarshal do JSON do frame. JSON inválido não chega ao Store.
 func DecodeRequest(raw []byte) (*Request, error) {
 	var req Request
 	if err := json.Unmarshal(raw, &req); err != nil {
@@ -32,6 +34,7 @@ func DecodeRequest(raw []byte) (*Request, error) {
 	return &req, nil
 }
 
+// Validate exige version=1, operation e requestId. Falha vira VALIDATION_ERROR.
 func (r *Request) Validate() error {
 	if r.Version != ProtocolVersion {
 		return fmt.Errorf("unsupported version %d (expected %d)", r.Version, ProtocolVersion)
@@ -45,6 +48,7 @@ func (r *Request) Validate() error {
 	return nil
 }
 
+// OK monta a resposta de sucesso com o mesmo requestId do pedido.
 func OK(requestID string, data any) Response {
 	raw, err := json.Marshal(data)
 	if err != nil {
@@ -62,6 +66,7 @@ func OK(requestID string, data any) Response {
 	}
 }
 
+// Error monta a resposta de falha (NO_SEATS, UNAUTHENTICATED, INVALID_JSON, …).
 func Error(requestID, code, message string) Response {
 	return Response{
 		Version:   ProtocolVersion,
@@ -75,6 +80,7 @@ func Error(requestID, code, message string) Response {
 	}
 }
 
+// MarshalResponse serializa a resposta para ir no frame TCP.
 func MarshalResponse(resp Response) ([]byte, error) {
 	return json.Marshal(resp)
 }

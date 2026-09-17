@@ -15,6 +15,7 @@ import (
 	"github.com/yma1001/vaijunto/internal/protocol"
 )
 
+// testStore cria um Store com JSON temporário (não mexe no data/state.json da demo).
 func testStore(t *testing.T) *Store {
 	t.Helper()
 	st, err := New(filepath.Join(t.TempDir(), "state.json"))
@@ -24,6 +25,7 @@ func testStore(t *testing.T) *Store {
 	return st
 }
 
+// publishABC publica Salvador→Feira→Jequié com a capacidade pedida.
 func publishABC(t *testing.T, st *Store, capacity int) domain.Ride {
 	t.Helper()
 	r, err := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana", "Jequié"}, "2026-10-01", "08:00", capacity, []int64{1000, 1500})
@@ -33,6 +35,7 @@ func publishABC(t *testing.T, st *Store, capacity int) domain.Ride {
 	return r
 }
 
+// TestSeedUsersPersist: o primeiro New grava as contas seed no JSON.
 func TestSeedUsersPersist(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -53,6 +56,7 @@ func TestSeedUsersPersist(t *testing.T) {
 	}
 }
 
+// TestAvailabilityPerSegment: reservar A→C decrementa A-B e B-C, não C-D.
 func TestAvailabilityPerSegment(t *testing.T) {
 	st := testStore(t)
 	r := publishABC(t, st, 2)
@@ -71,6 +75,7 @@ func TestAvailabilityPerSegment(t *testing.T) {
 	}
 }
 
+// TestAtomicLastSegmentUnavailable: último trecho lotado aborta sem descontar os anteriores.
 func TestAtomicLastSegmentUnavailable(t *testing.T) {
 	st := testStore(t)
 	r1, _ := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana"}, "2026-10-01", "08:00", 1, []int64{1000})
@@ -97,6 +102,7 @@ func TestAtomicLastSegmentUnavailable(t *testing.T) {
 	}
 }
 
+// TestLastSeatContention: 32 goroutines na última vaga → exatamente 1 sucesso.
 func TestLastSeatContention(t *testing.T) {
 	st := testStore(t)
 	r := publishABC(t, st, 1)
@@ -136,6 +142,7 @@ func TestLastSeatContention(t *testing.T) {
 	}
 }
 
+// TestCancelIdempotent: cancelar duas vezes não devolve o assento de novo.
 func TestCancelIdempotent(t *testing.T) {
 	st := testStore(t)
 	r := publishABC(t, st, 1)
@@ -157,6 +164,7 @@ func TestCancelIdempotent(t *testing.T) {
 	}
 }
 
+// TestConfirmIdempotentRequestID: o mesmo requestId não vende a vaga duas vezes.
 func TestConfirmIdempotentRequestID(t *testing.T) {
 	st := testStore(t)
 	r := publishABC(t, st, 2)
@@ -178,6 +186,7 @@ func TestConfirmIdempotentRequestID(t *testing.T) {
 	}
 }
 
+// TestCancelRideRestoresComposite: cancelar uma carona devolve vaga nas outras pernas do composto.
 func TestCancelRideRestoresComposite(t *testing.T) {
 	st := testStore(t)
 	a, _ := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana"}, "2026-10-01", "08:00", 1, []int64{1000})
@@ -202,6 +211,7 @@ func TestCancelRideRestoresComposite(t *testing.T) {
 	}
 }
 
+// TestPersistenceRestartKeepsRides: um Store novo no mesmo arquivo reencontra as caronas.
 func TestPersistenceRestartKeepsRides(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -224,6 +234,7 @@ func TestPersistenceRestartKeepsRides(t *testing.T) {
 	}
 }
 
+// confirmSalvadorFeira confirma o primeiro trecho da rota ABC (helper dos testes de persistência).
 func confirmSalvadorFeira(t *testing.T, st *Store, passengerID, requestID string, ride domain.Ride) domain.Reservation {
 	t.Helper()
 	res, err := st.ConfirmReservation(passengerID, requestID, []domain.LegInput{
@@ -235,6 +246,7 @@ func confirmSalvadorFeira(t *testing.T, st *Store, passengerID, requestID string
 	return res
 }
 
+// assertPassengerReservationAndSeats confere que conta, reserva e vagas sobreviveram ao reload.
 func assertPassengerReservationAndSeats(t *testing.T, st *Store, passengerID, reservationID, rideID string, wantSeats int) {
 	t.Helper()
 	if _, err := st.Authenticate("passageiro1", "senha123"); err != nil {
@@ -267,6 +279,7 @@ func assertPassengerReservationAndSeats(t *testing.T, st *Store, passengerID, re
 
 // Regression: confirm → persist → new Store on the same temp file must LIST the
 // reservation for that passenger and keep seats decremented. IP is not in the file.
+// TestConfirmReservationSurvivesNewStoreLoad: reserva confirmada reaparece após reabrir o JSON.
 func TestConfirmReservationSurvivesNewStoreLoad(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -302,6 +315,7 @@ func TestConfirmReservationSurvivesNewStoreLoad(t *testing.T) {
 	assertPassengerReservationAndSeats(t, st2, "user-pass-1", res.ReservationID, ride.RideID, 1)
 }
 
+// wipeConfirmIndexInFile zera o índice persistido para provar que o load reconstrói a partir das reservas.
 func wipeConfirmIndexInFile(t *testing.T, path string) {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -324,6 +338,7 @@ func wipeConfirmIndexInFile(t *testing.T, path string) {
 
 // confirmIndex may be missing/empty after a crash or an old file. Load must still
 // return the reservation AND rebuild the idempotency index from reservations.
+// TestLoadRebuildsConfirmIndexFromReservations: o índice de idempotência é reconstruído no load.
 func TestLoadRebuildsConfirmIndexFromReservations(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -357,6 +372,7 @@ func TestLoadRebuildsConfirmIndexFromReservations(t *testing.T) {
 	}
 }
 
+// TestResolveDataPathIsAbsolute: DATA_PATH relativo vira absoluto em relação ao cwd.
 func TestResolveDataPathIsAbsolute(t *testing.T) {
 	got, err := resolveDataPath("data/state.json")
 	if err != nil {
@@ -370,6 +386,7 @@ func TestResolveDataPathIsAbsolute(t *testing.T) {
 	}
 }
 
+// TestRegisterBothRolesDuplicateAndRestart: DRIVER e PASSENGER persistem; username repetido falha.
 func TestRegisterBothRolesDuplicateAndRestart(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -408,6 +425,7 @@ func TestRegisterBothRolesDuplicateAndRestart(t *testing.T) {
 	}
 }
 
+// TestPublishRideTwoAndFourCities: rota de 2 cidades gera 1 trecho; de 4 cidades gera 3.
 func TestPublishRideTwoAndFourCities(t *testing.T) {
 	st := testStore(t)
 	two, err := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana"}, "2026-10-10", "08:00", 2, []int64{1500})
@@ -420,6 +438,7 @@ func TestPublishRideTwoAndFourCities(t *testing.T) {
 	}
 }
 
+// TestNeverNegativeOrAboveCapacity: depois de confirma/cancela, vagas ficam em [0, capacity].
 func TestNeverNegativeOrAboveCapacity(t *testing.T) {
 	st := testStore(t)
 	r := publishABC(t, st, 2)
@@ -433,6 +452,7 @@ func TestNeverNegativeOrAboveCapacity(t *testing.T) {
 	}
 }
 
+// rideSeats devolve availableSeats de cada trecho (para comparar antes/depois de um CONFIRM).
 func rideSeats(t *testing.T, st *Store, driverID, rideID string) []int {
 	t.Helper()
 	for _, r := range st.ListDriverRides(driverID) {
@@ -449,6 +469,7 @@ func rideSeats(t *testing.T, st *Store, driverID, rideID string) []int {
 	return nil
 }
 
+// readPersisted lê o JSON do disco para comparar o arquivo antes e depois de um CONFIRM rejeitado.
 func readPersisted(t *testing.T, st *Store) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(st.Path())
@@ -458,6 +479,7 @@ func readPersisted(t *testing.T, st *Store) []byte {
 	return raw
 }
 
+// mustRejectUnchanged confirma que um CONFIRM inválido não muda vagas, reservas nem o arquivo.
 func mustRejectUnchanged(t *testing.T, st *Store, driverID, rideID, passengerID string, beforeSeats []int, beforeFile []byte, err error) {
 	t.Helper()
 	if !errors.Is(err, ErrValidation) {
@@ -481,6 +503,7 @@ func mustRejectUnchanged(t *testing.T, st *Store, driverID, rideID, passengerID 
 // Regression: duplicate identical legs used to confirm and decrement the same
 // segments twice (capacity 1 became -1). Must fail as VALIDATION_ERROR with
 // state intact — do not clamp negatives to hide the bug.
+// TestConfirmRejectsDuplicateIdenticalLegCapacity1: a mesma leg duas vezes não vai a availableSeats=-1.
 func TestConfirmRejectsDuplicateIdenticalLegCapacity1(t *testing.T) {
 	st := testStore(t)
 	r := publishABC(t, st, 1)
@@ -496,6 +519,7 @@ func TestConfirmRejectsDuplicateIdenticalLegCapacity1(t *testing.T) {
 	}
 }
 
+// TestConfirmRejectsDuplicateIdenticalLegCapacityGreaterThan1: mesmo com vaga extra, leg repetida é erro.
 func TestConfirmRejectsDuplicateIdenticalLegCapacityGreaterThan1(t *testing.T) {
 	st := testStore(t)
 	r := publishABC(t, st, 3)
@@ -508,6 +532,7 @@ func TestConfirmRejectsDuplicateIdenticalLegCapacityGreaterThan1(t *testing.T) {
 	mustRejectUnchanged(t, st, "user-driver-1", r.RideID, "user-pass-1", beforeSeats, beforeFile, err)
 }
 
+// TestConfirmRejectsPartialSegmentOverlap: A→C e B→C na mesma carona compartilham um segmento.
 func TestConfirmRejectsPartialSegmentOverlap(t *testing.T) {
 	st := testStore(t)
 	r := publishABC(t, st, 2)
@@ -520,6 +545,7 @@ func TestConfirmRejectsPartialSegmentOverlap(t *testing.T) {
 	mustRejectUnchanged(t, st, "user-driver-1", r.RideID, "user-pass-1", beforeSeats, beforeFile, err)
 }
 
+// TestConfirmRejectLeavesSeatsReservationsAndFileUnchanged: rejeição não grava JSON nem cria reserva.
 func TestConfirmRejectLeavesSeatsReservationsAndFileUnchanged(t *testing.T) {
 	st := testStore(t)
 	r := publishABC(t, st, 1)
@@ -532,6 +558,7 @@ func TestConfirmRejectLeavesSeatsReservationsAndFileUnchanged(t *testing.T) {
 	mustRejectUnchanged(t, st, "user-driver-1", r.RideID, "user-pass-1", beforeSeats, beforeFile, err)
 }
 
+// TestConfirmRejectsDisconnectedItinerary: destino da primeira leg tem que ser origem da seguinte.
 func TestConfirmRejectsDisconnectedItinerary(t *testing.T) {
 	st := testStore(t)
 	r, err := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana", "Jequié", "Vitória da Conquista"}, "2026-10-01", "08:00", 2, []int64{1000, 1500, 2000})
@@ -547,6 +574,7 @@ func TestConfirmRejectsDisconnectedItinerary(t *testing.T) {
 	mustRejectUnchanged(t, st, "user-driver-1", r.RideID, "user-pass-1", beforeSeats, beforeFile, err)
 }
 
+// TestConfirmRejectsIncompatibleDates: caronas de dias diferentes não formam um itinerário.
 func TestConfirmRejectsIncompatibleDates(t *testing.T) {
 	st := testStore(t)
 	a, err := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana"}, "2026-10-01", "08:00", 1, []int64{1000})
@@ -581,6 +609,7 @@ func TestConfirmRejectsIncompatibleDates(t *testing.T) {
 	}
 }
 
+// TestConfirmValidCompositeDistinctDrivers: composto válido de dois motoristas confirma os dois trechos.
 func TestConfirmValidCompositeDistinctDrivers(t *testing.T) {
 	st := testStore(t)
 	a, err := st.PublishRide("user-driver-1", []string{"Salvador", "Feira de Santana"}, "2026-10-01", "08:00", 1, []int64{1000})
@@ -609,6 +638,7 @@ func TestConfirmValidCompositeDistinctDrivers(t *testing.T) {
 	}
 }
 
+// TestConfirmValidConsecutiveSegmentsSameRide: dois legs seguidos da mesma carona são aceitos se não sobrepõem.
 func TestConfirmValidConsecutiveSegmentsSameRide(t *testing.T) {
 	st := testStore(t)
 	r := publishABC(t, st, 2)

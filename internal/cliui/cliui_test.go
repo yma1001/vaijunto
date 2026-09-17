@@ -8,6 +8,7 @@ import (
 	"github.com/yma1001/vaijunto/internal/protocol"
 )
 
+// TestParseBRDate: DD/MM/AAAA vira YYYY-MM-DD; 31/02 é rejeitado.
 func TestParseBRDate(t *testing.T) {
 	iso, err := ParseBRDate("16/09/2026")
 	if err != nil || iso != "2026-09-16" {
@@ -27,12 +28,14 @@ func TestParseBRDate(t *testing.T) {
 	}
 }
 
+// TestFormatBRDate: YYYY-MM-DD vira DD/MM/AAAA na tela.
 func TestFormatBRDate(t *testing.T) {
 	if got := FormatBRDate("2026-10-10"); got != "10/10/2026" {
 		t.Fatalf("got %q", got)
 	}
 }
 
+// TestParseBRLToCents: 15, 15,50 e 15.50 viram centavos sem float64.
 func TestParseBRLToCents(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -54,6 +57,7 @@ func TestParseBRLToCents(t *testing.T) {
 	}
 }
 
+// TestParseBRLToCentsInvalid: lista de preços ou texto solto não é aceito.
 func TestParseBRLToCentsInvalid(t *testing.T) {
 	bads := []string{
 		"",
@@ -76,6 +80,7 @@ func TestParseBRLToCentsInvalid(t *testing.T) {
 	}
 }
 
+// TestFormatBRL: 1500 centavos aparecem como R$ 15,00.
 func TestFormatBRL(t *testing.T) {
 	if got := FormatBRL(1500); got != "R$ 15,00" {
 		t.Fatalf("got %q", got)
@@ -88,6 +93,7 @@ func TestFormatBRL(t *testing.T) {
 	}
 }
 
+// TestParseCitiesTwoAndFour: a rota aceita 2 ou 4+ cidades, sem teto de 3.
 func TestParseCitiesTwoAndFour(t *testing.T) {
 	two, err := ParseCities("Salvador, Feira de Santana")
 	if err != nil || len(two) != 2 {
@@ -102,6 +108,7 @@ func TestParseCitiesTwoAndFour(t *testing.T) {
 	}
 }
 
+// TestParseCitiesRejectsEmptyAndShort: uma cidade só, ou item vazio entre vírgulas, é erro.
 func TestParseCitiesRejectsEmptyAndShort(t *testing.T) {
 	if _, err := ParseCities("Salvador"); err == nil {
 		t.Fatal("one city")
@@ -114,6 +121,7 @@ func TestParseCitiesRejectsEmptyAndShort(t *testing.T) {
 	}
 }
 
+// TestStatusPT: ACTIVE/CANCELLED/CONFIRMED viram ATIVA/CANCELADA/CONFIRMADA na CLI.
 func TestStatusPT(t *testing.T) {
 	if StatusPT("ACTIVE") != "ATIVA" {
 		t.Fatal(StatusPT("ACTIVE"))
@@ -126,6 +134,7 @@ func TestStatusPT(t *testing.T) {
 	}
 }
 
+// TestFormatRideAndItineraryNoRawJSON: a CLI não imprime o JSON cru do protocolo.
 func TestFormatRideAndItineraryNoRawJSON(t *testing.T) {
 	ride := protocol.RideView{
 		RideID:        "ride-abc",
@@ -189,6 +198,7 @@ func TestFormatRideAndItineraryNoRawJSON(t *testing.T) {
 	}
 }
 
+// TestValidateRegisterInput: senha e confirmação precisam bater antes de chamar o servidor.
 func TestValidateRegisterInput(t *testing.T) {
 	if err := ValidateRegisterInput("", "a", "a"); err == nil {
 		t.Fatal("empty user")
@@ -204,6 +214,7 @@ func TestValidateRegisterInput(t *testing.T) {
 	}
 }
 
+// TestFriendlyError: credencial inválida e conexão recusada viram texto em português.
 func TestFriendlyError(t *testing.T) {
 	if got := FriendlyError(errString("REGISTER failed: VALIDATION_ERROR username already exists")); got != "este usuário já existe" {
 		t.Fatal(got)
@@ -213,6 +224,7 @@ func TestFriendlyError(t *testing.T) {
 	}
 }
 
+// TestNormalizeLineStripsCRLFSpaceAndNUL: stdin Windows (CR/NUL) não quebra o menu.
 func TestNormalizeLineStripsCRLFSpaceAndNUL(t *testing.T) {
 	cases := []struct {
 		in, want string
@@ -231,6 +243,7 @@ func TestNormalizeLineStripsCRLFSpaceAndNUL(t *testing.T) {
 	}
 }
 
+// TestPrompterAcceptsLFCRLFAndLoneCR: o menu funciona igual no Linux e no Windows.
 func TestPrompterAcceptsLFCRLFAndLoneCR(t *testing.T) {
 	var out bytes.Buffer
 	p := NewPrompter(strings.NewReader("6\r\n 7 \n8\x00\n9\r10\n"), &out)
@@ -249,6 +262,7 @@ func TestPrompterAcceptsLFCRLFAndLoneCR(t *testing.T) {
 	}
 }
 
+// TestPrompterCRLFIsSingleToken: \r\n conta como uma linha, não duas.
 func TestPrompterCRLFIsSingleToken(t *testing.T) {
 	var out bytes.Buffer
 	p := NewPrompter(strings.NewReader("6\r\n"), &out)
@@ -263,6 +277,7 @@ func TestPrompterCRLFIsSingleToken(t *testing.T) {
 	}
 }
 
+// TestResolveListChoice: o passageiro confirma pelo número 1-based da última busca.
 func TestResolveListChoice(t *testing.T) {
 	ids := []string{"ride-a", "ride-b"}
 	i, err := ResolveListChoice("1", ids)

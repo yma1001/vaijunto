@@ -6,6 +6,7 @@ import (
 	"github.com/yma1001/vaijunto/internal/domain"
 )
 
+// ride monta uma carona de teste com vagas e preços por trecho.
 func ride(id string, cities []string, date string, seats []int, prices []int64) domain.Ride {
 	segs := make([]domain.Segment, len(cities)-1)
 	for i := 0; i < len(cities)-1; i++ {
@@ -20,6 +21,7 @@ func ride(id string, cities []string, date string, seats []int, prices []int64) 
 	}
 }
 
+// TestDirectItinerary: Salvador→Jequié numa única carona vira 1 leg, 0 baldeações.
 func TestDirectItinerary(t *testing.T) {
 	r := ride("r1", []string{"Salvador", "Feira de Santana", "Jequié"}, "2026-10-01", []int{2, 2}, []int64{1000, 1500})
 	got := Search([]domain.Ride{r}, "Salvador", "Jequié", "2026-10-01", 3, 20)
@@ -31,6 +33,7 @@ func TestDirectItinerary(t *testing.T) {
 	}
 }
 
+// TestCompositeItinerary: dois motoristas (Salvador→Feira + Feira→Vitória) viram 1 itinerário composto.
 func TestCompositeItinerary(t *testing.T) {
 	a := ride("ra", []string{"Salvador", "Feira de Santana"}, "2026-10-01", []int{1}, []int64{1000})
 	b := ride("rb", []string{"Feira de Santana", "Vitória da Conquista"}, "2026-10-01", []int{1}, []int64{2000})
@@ -43,6 +46,7 @@ func TestCompositeItinerary(t *testing.T) {
 	}
 }
 
+// TestSearchDoesNotUseFullSegments: trecho com 0 vagas não entra no grafo.
 func TestSearchDoesNotUseFullSegments(t *testing.T) {
 	a := ride("ra", []string{"Salvador", "Feira de Santana"}, "2026-10-01", []int{0}, []int64{1000})
 	got := Search([]domain.Ride{a}, "Salvador", "Feira de Santana", "2026-10-01", 3, 20)
@@ -51,6 +55,7 @@ func TestSearchDoesNotUseFullSegments(t *testing.T) {
 	}
 }
 
+// TestSortByPriceThenTransfers: o composto mais barato vem antes do direto mais caro.
 func TestSortByPriceThenTransfers(t *testing.T) {
 	direct := ride("cheap", []string{"A", "C"}, "2026-10-01", []int{1}, []int64{5000})
 	via := ride("a", []string{"A", "B"}, "2026-10-01", []int{1}, []int64{1000})
@@ -64,6 +69,7 @@ func TestSortByPriceThenTransfers(t *testing.T) {
 	}
 }
 
+// TestIgnoresOtherDate: carona de outro dia não aparece na busca.
 func TestIgnoresOtherDate(t *testing.T) {
 	r := ride("r1", []string{"A", "B"}, "2026-10-02", []int{1}, []int64{1})
 	if got := Search([]domain.Ride{r}, "A", "B", "2026-10-01", 3, 20); len(got) != 0 {

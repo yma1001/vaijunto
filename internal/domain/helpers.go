@@ -2,10 +2,13 @@ package domain
 
 import "strings"
 
+// NormalizeCity tira espaços das pontas. Comparações de cidade usam isso
+// para "Salvador" e " Salvador " serem o mesmo vértice no grafo.
 func NormalizeCity(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// CitiesEqual compara cidades sem diferenciar maiúsculas.
 func CitiesEqual(a, b string) bool {
 	return strings.EqualFold(NormalizeCity(a), NormalizeCity(b))
 }
@@ -35,6 +38,7 @@ func SegmentIndexesBetween(cities []string, origin, destination string) ([]int, 
 	return idx, true
 }
 
+// CopyStrings devolve uma cópia da fatia para o snapshot não vazar o slice interno.
 func CopyStrings(in []string) []string {
 	if in == nil {
 		return nil
@@ -44,12 +48,14 @@ func CopyStrings(in []string) []string {
 	return out
 }
 
+// CopyRide copia carona e trechos para o caller não mutar o mapa do Store.
 func CopyRide(r Ride) Ride {
 	r.Cities = CopyStrings(r.Cities)
 	r.Segments = append([]Segment(nil), r.Segments...)
 	return r
 }
 
+// CopyReservation copia a reserva e os índices de segmento de cada leg.
 func CopyReservation(r Reservation) Reservation {
 	legs := make([]Leg, len(r.Legs))
 	for i, l := range r.Legs {
@@ -60,4 +66,5 @@ func CopyReservation(r Reservation) Reservation {
 	return r
 }
 
+// CopyUser existe por simetria com Ride/Reservation (User não tem fatias internas).
 func CopyUser(u User) User { return u }

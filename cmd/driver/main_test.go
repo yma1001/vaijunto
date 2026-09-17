@@ -11,6 +11,7 @@ import (
 	"github.com/yma1001/vaijunto/internal/server"
 )
 
+// runCLI alimenta o menu com um script de linhas e captura a saída (teste da CLI sem teclado).
 func runCLI(t *testing.T, c *client.Client, script string) string {
 	t.Helper()
 	var out bytes.Buffer
@@ -27,6 +28,7 @@ func runCLI(t *testing.T, c *client.Client, script string) string {
 	return out.String()
 }
 
+// TestDriverLogoutReturnsToMenuSwitchesUserAndZeroExits: 6 volta ao menu; dá para entrar com outra conta; 0 sai.
 func TestDriverLogoutReturnsToMenuSwitchesUserAndZeroExits(t *testing.T) {
 	cfg, st, _ := server.StartTestServer(t)
 	setup, err := client.Dial(cfg)
@@ -94,6 +96,7 @@ func TestDriverLogoutReturnsToMenuSwitchesUserAndZeroExits(t *testing.T) {
 	}
 }
 
+// TestDriverZeroFromInitialMenuExits: 0 no menu inicial encerra o processo.
 func TestDriverZeroFromInitialMenuExits(t *testing.T) {
 	cfg, _, _ := server.StartTestServer(t)
 	c, err := client.Dial(cfg)

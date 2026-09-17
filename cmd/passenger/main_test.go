@@ -11,6 +11,7 @@ import (
 	"github.com/yma1001/vaijunto/internal/server"
 )
 
+// runCLI alimenta o menu do passageiro com um script de linhas e captura a saída.
 func runCLI(t *testing.T, c *client.Client, script string) string {
 	t.Helper()
 	var out bytes.Buffer
@@ -27,6 +28,7 @@ func runCLI(t *testing.T, c *client.Client, script string) string {
 	return out.String()
 }
 
+// TestPassengerLogoutReturnsToMenuSwitchesUserAndZeroExits: logout não mata o processo; troca de conta funciona.
 func TestPassengerLogoutReturnsToMenuSwitchesUserAndZeroExits(t *testing.T) {
 	cfg, st, _ := server.StartTestServer(t)
 	d, err := client.Dial(cfg)
@@ -81,6 +83,7 @@ func TestPassengerLogoutReturnsToMenuSwitchesUserAndZeroExits(t *testing.T) {
 	}
 }
 
+// TestPassengerZeroFromInitialMenuExits: 0 no menu inicial encerra o processo.
 func TestPassengerZeroFromInitialMenuExits(t *testing.T) {
 	cfg, _, _ := server.StartTestServer(t)
 	c, err := client.Dial(cfg)
@@ -97,6 +100,7 @@ func TestPassengerZeroFromInitialMenuExits(t *testing.T) {
 	}
 }
 
+// TestPassengerUnknownOptionIsInvalidNotExit: opção inválida não encerra o cliente.
 func TestPassengerUnknownOptionIsInvalidNotExit(t *testing.T) {
 	cfg, _, _ := server.StartTestServer(t)
 	c, err := client.Dial(cfg)

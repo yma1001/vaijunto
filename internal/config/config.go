@@ -1,3 +1,5 @@
+// Pacote config lê host, porta, caminhos e timeouts das variáveis de ambiente.
+// LISTEN_HOST/SERVER_PORT valem para o servidor; SERVER_HOST para os clientes.
 package config
 
 import (
@@ -6,8 +8,8 @@ import (
 	"time"
 )
 
-// Config agrupa parâmetros de execução. Nada disso é requisito do enunciado:
-// são limites e defaults do protótipo, todos sobrescrevíveis por ambiente.
+// Config agrupa parâmetros de execução. São limites do protótipo
+// (payload, baldeações, timeouts), todos sobrescrevíveis por ambiente.
 type Config struct {
 	ListenHost string
 	ListenPort string
@@ -28,6 +30,7 @@ type Config struct {
 	ConnectTimeout time.Duration
 }
 
+// Load preenche Config com defaults (0.0.0.0:5000, 1 MiB, 3 baldeações, 10 min idle).
 func Load() Config {
 	return Config{
 		ListenHost:      env("LISTEN_HOST", "0.0.0.0"),
@@ -46,14 +49,17 @@ func Load() Config {
 	}
 }
 
+// ListenAddr é o bind do servidor (host:porta). 0.0.0.0 permite outro PC na LAN.
 func (c Config) ListenAddr() string {
 	return c.ListenHost + ":" + c.ListenPort
 }
 
+// ServerAddr é o destino do Dial dos clientes (SERVER_HOST:SERVER_PORT).
 func (c Config) ServerAddr() string {
 	return c.ServerHost + ":" + c.ServerPort
 }
 
+// env lê string do ambiente ou devolve o default.
 func env(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -61,6 +67,7 @@ func env(key, fallback string) string {
 	return fallback
 }
 
+// envInt lê um inteiro do ambiente; valor inválido cai no default (não aborta a subida).
 func envInt(key string, fallback int) int {
 	v := os.Getenv(key)
 	if v == "" {
@@ -73,6 +80,7 @@ func envInt(key string, fallback int) int {
 	return n
 }
 
+// envDuration aceita strings no formato do time.ParseDuration ("30s", "10m").
 func envDuration(key string, fallback time.Duration) time.Duration {
 	v := os.Getenv(key)
 	if v == "" {

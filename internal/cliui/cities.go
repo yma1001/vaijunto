@@ -1,3 +1,5 @@
+// Pacote cliui é só a borda humana das CLIs: data BR, preço em reais, menus e
+// mensagens. Não altera o protocolo — o fio continua ISO e centavos.
 package cliui
 
 import (
@@ -5,6 +7,7 @@ import (
 	"strings"
 )
 
+// CitiesPrompt é o texto do menu do motorista ao publicar a rota.
 const CitiesPrompt = "Cidades da rota, separadas por vírgula (mínimo 2)\nexemplo: Salvador, Feira de Santana, Jequié, Vitória da Conquista\n> "
 
 // ParseCities interpreta a lista digitada pelo motorista.

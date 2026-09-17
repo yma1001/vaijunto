@@ -1,3 +1,5 @@
+// Pacote service liga o Store à busca e converte o domínio para as views do protocolo.
+// Não pega lock: quem sincroniza é o Store (snapshot) e o grafo trabalha na cópia.
 package service
 
 import (
@@ -9,16 +11,19 @@ import (
 	"github.com/yma1001/vaijunto/internal/store"
 )
 
+// Service encapsula limites de baldeação/resultados e o acesso ao Store na busca.
 type Service struct {
 	Store        *store.Store
 	MaxTransfers int
 	MaxResults   int
 }
 
+// New constrói o serviço usado pelo dispatcher do servidor.
 func New(st *store.Store, maxTransfers, maxResults int) *Service {
 	return &Service{Store: st, MaxTransfers: maxTransfers, MaxResults: maxResults}
 }
 
+// Search tira um snapshot das caronas e devolve itinerários. Não reserva assento.
 func (s *Service) Search(origin, dest, date string) ([]domain.Itinerary, error) {
 	if origin == "" || dest == "" || date == "" {
 		return nil, fmt.Errorf("%w: origin, destination and date required", store.ErrValidation)
@@ -27,6 +32,7 @@ func (s *Service) Search(origin, dest, date string) ([]domain.Itinerary, error) 
 	return search.Search(rides, origin, dest, date, s.MaxTransfers, s.MaxResults), nil
 }
 
+// RideView projeta a carona interna no JSON que o cliente recebe.
 func RideView(r domain.Ride) protocol.RideView {
 	segs := make([]protocol.SegmentView, len(r.Segments))
 	for i, sg := range r.Segments {
@@ -50,6 +56,7 @@ func RideView(r domain.Ride) protocol.RideView {
 	}
 }
 
+// ItineraryView projeta o resultado da busca para o envelope SEARCH_ITINERARIES.
 func ItineraryView(it domain.Itinerary) protocol.ItineraryView {
 	legs := make([]protocol.LegView, len(it.Legs))
 	for i, l := range it.Legs {
@@ -62,6 +69,7 @@ func ItineraryView(it domain.Itinerary) protocol.ItineraryView {
 	}
 }
 
+// LegView omite os índices internos de segmento; o cliente só precisa de origin/destino/rideId.
 func LegView(l domain.Leg) protocol.LegView {
 	return protocol.LegView{
 		RideID:         l.RideID,
@@ -75,6 +83,7 @@ func LegView(l domain.Leg) protocol.LegView {
 	}
 }
 
+// ReservationView projeta a reserva persistida para LIST/CONFIRM/CANCEL.
 func ReservationView(r domain.Reservation) protocol.ReservationView {
 	legs := make([]protocol.LegView, len(r.Legs))
 	for i, l := range r.Legs {

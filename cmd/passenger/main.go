@@ -1,3 +1,5 @@
+// Cliente passageiro (CLI). Busca itinerários, confirma, lista e cancela reservas.
+// A busca não segura vaga: o CONFIRM reenvia as legs e o servidor revalida.
 package main
 
 import (
@@ -12,6 +14,7 @@ import (
 	"github.com/yma1001/vaijunto/internal/protocol"
 )
 
+// main conecta em SERVER_HOST:SERVER_PORT e entra no menu do passageiro.
 func main() {
 	cfg := config.Load()
 	fmt.Printf("VAIJUNTO — cliente PASSAGEIRO\nServidor: %s\n\n", cfg.ServerAddr())
@@ -24,6 +27,7 @@ func main() {
 	run(c, os.Stdin, os.Stdout)
 }
 
+// run é o loop dos menus do passageiro. lastSearch/lastReservations são cache de tela, não o Store.
 func run(c *client.Client, in io.Reader, out io.Writer) {
 	prompt := cliui.NewPrompter(in, out)
 	read := prompt.Read
@@ -178,6 +182,7 @@ func run(c *client.Client, in io.Reader, out io.Writer) {
 	}
 }
 
+// loadReservations pede LIST_RESERVATIONS ao servidor (o que vale depois de um restart).
 func loadReservations(c *client.Client) ([]protocol.ReservationView, error) {
 	var out protocol.ListReservationsResult
 	if err := c.MustOK(protocol.OpListReservations, map[string]any{}, &out); err != nil {
@@ -189,6 +194,7 @@ func loadReservations(c *client.Client) ([]protocol.ReservationView, error) {
 	return out.Reservations, nil
 }
 
+// ensureReservations usa o cache da tela se existir; senão consulta o servidor.
 func ensureReservations(c *client.Client, last []protocol.ReservationView) ([]protocol.ReservationView, error) {
 	if len(last) > 0 {
 		return last, nil
@@ -196,6 +202,7 @@ func ensureReservations(c *client.Client, last []protocol.ReservationView) ([]pr
 	return loadReservations(c)
 }
 
+// printReservations lista as reservas com data BR e preço em reais.
 func printReservations(w io.Writer, list []protocol.ReservationView) {
 	if len(list) == 0 {
 		fmt.Fprintln(w, "nenhuma reserva")
@@ -206,6 +213,7 @@ func printReservations(w io.Writer, list []protocol.ReservationView) {
 	}
 }
 
+// strconvIndex vira o índice 1-based da busca numa string para o seletor da CLI.
 func strconvIndex(n int) string {
 	return fmt.Sprintf("%d", n)
 }

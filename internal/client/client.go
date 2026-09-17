@@ -1,3 +1,6 @@
+// Pacote client é a biblioteca TCP usada pelos CLIs, testes, smoke e loadtest.
+// Mantém uma conexão persistente: depois do LOGIN, as próximas operações
+// reutilizam o mesmo socket (a sessão mora no servidor, nesta conexão).
 package client
 
 import (
@@ -22,6 +25,7 @@ type Client struct {
 	Name   string
 }
 
+// Dial abre o TCP para SERVER_HOST:SERVER_PORT com timeout de connect.
 func Dial(cfg config.Config) (*Client, error) {
 	d := net.Dialer{Timeout: cfg.ConnectTimeout}
 	conn, err := d.Dial("tcp", cfg.ServerAddr())
@@ -31,6 +35,7 @@ func Dial(cfg config.Config) (*Client, error) {
 	return &Client{cfg: cfg, conn: conn}, nil
 }
 
+// Close encerra o socket. Não envia LOGOUT — use Logout se quiser o handshake.
 func (c *Client) Close() error {
 	if c.conn != nil {
 		return c.conn.Close()
@@ -38,17 +43,20 @@ func (c *Client) Close() error {
 	return nil
 }
 
+// nextID gera requestId único o bastante para correlacionar e para a idempotência do CONFIRM.
 func (c *Client) nextID() string {
 	n := c.seq.Add(1)
 	return fmt.Sprintf("req-%d-%d", time.Now().UnixNano(), n)
 }
 
+// clearIdentity apaga o cache local de login; o servidor já esqueceu a Session quando o TCP caiu.
 func (c *Client) clearIdentity() {
 	c.UserID = ""
 	c.Role = ""
 	c.Name = ""
 }
 
+// Reconnect fecha o socket antigo e abre outro. A sessão TCP anterior morreu; precisa LOGIN de novo.
 func (c *Client) Reconnect() error {
 	d := net.Dialer{Timeout: c.cfg.ConnectTimeout}
 	conn, err := d.Dial("tcp", c.cfg.ServerAddr())
@@ -74,6 +82,7 @@ func (c *Client) Logout() error {
 	return c.Reconnect()
 }
 
+// Call envia um frame (envelope JSON) e espera a resposta. Sem pipelining: um pedido por vez.
 func (c *Client) Call(operation, requestID string, data any) (protocol.Response, error) {
 	if c.conn == nil {
 		return protocol.Response{}, fmt.Errorf("not connected")
@@ -117,6 +126,7 @@ func (c *Client) Call(operation, requestID string, data any) (protocol.Response,
 	return resp, nil
 }
 
+// MustOK chama Call e falha se status != OK. dest, se não for nil, recebe o data da resposta.
 func (c *Client) MustOK(operation string, data any, dest any) error {
 	resp, err := c.Call(operation, "", data)
 	if err != nil {
@@ -136,11 +146,13 @@ func (c *Client) MustOK(operation string, data any, dest any) error {
 	return nil
 }
 
+// Ping envia PING sem login. Serve para checar se o servidor está no ar.
 func (c *Client) Ping() error {
 	var out protocol.PingResult
 	return c.MustOK(protocol.OpPing, map[string]any{}, &out)
 }
 
+// Login autentica e guarda userId/role localmente, espelhando a Session do servidor.
 func (c *Client) Login(user, pass string) error {
 	if c.conn == nil {
 		if err := c.Reconnect(); err != nil {
@@ -157,6 +169,7 @@ func (c *Client) Login(user, pass string) error {
 	return nil
 }
 
+// Register cria a conta no servidor. Não deixa a conexão autenticada.
 func (c *Client) Register(user, pass, role string) (protocol.RegisterResult, error) {
 	var out protocol.RegisterResult
 	if err := c.MustOK(protocol.OpRegister, protocol.RegisterData{
@@ -167,4 +180,5 @@ func (c *Client) Register(user, pass, role string) (protocol.RegisterResult, err
 	return out, nil
 }
 
+// Conn expõe o socket cru (testes de frame incompleto / disconnect).
 func (c *Client) Conn() net.Conn { return c.conn }

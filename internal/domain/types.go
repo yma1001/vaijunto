@@ -1,3 +1,6 @@
+// Pacote domain descreve o modelo de dados do servidor: usuário, carona,
+// trecho, reserva e itinerário. Essas structs são a fonte de verdade em
+// memória (Store) e no arquivo state.json.
 package domain
 
 import "time"
@@ -10,6 +13,7 @@ const (
 	ResCancelled = "CANCELLED"
 )
 
+// User é uma conta do protótipo (motorista ou passageiro).
 type User struct {
 	UserID   string `json:"userId"`
 	Username string `json:"username"`
@@ -17,6 +21,8 @@ type User struct {
 	Role     string `json:"role"`
 }
 
+// Ride é uma carona publicada por um motorista. Cities é a rota ordenada;
+// cada par adjacente vira um Segment com vaga e preço próprios.
 type Ride struct {
 	RideID        string    `json:"rideId"`
 	DriverID      string    `json:"driverId"`
@@ -41,6 +47,8 @@ type Segment struct {
 	AvailableSeats int    `json:"availableSeats"`
 }
 
+// Reservation é a posse de vaga depois de um CONFIRM atômico.
+// Legs pode misturar caronas de motoristas diferentes (itinerário composto).
 type Reservation struct {
 	ReservationID string    `json:"reservationId"`
 	PassengerID   string    `json:"passengerId"`
@@ -65,12 +73,15 @@ type Leg struct {
 	SegmentIndexes []int  `json:"segmentIndexes"`
 }
 
+// Itinerary é só o resultado da busca. Não é entidade persistida e não
+// segura vaga: o passageiro reenvia as legs no CONFIRM_RESERVATION.
 type Itinerary struct {
 	TotalPrice int64
 	Transfers  int
 	Legs       []Leg
 }
 
+// LegInput é o que o cliente manda no confirm: carona + intervalo de cidades.
 type LegInput struct {
 	RideID      string
 	Origin      string

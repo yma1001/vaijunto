@@ -81,6 +81,7 @@ func FormatBRL(cents int64) string {
 	return fmt.Sprintf("%sR$ %d,%02d", sign, cents/100, cents%100)
 }
 
+// allDigits recusa letra e sinal; o preço humano só pode ter dígitos e um separador.
 func allDigits(s string) bool {
 	if s == "" {
 		return false
@@ -93,6 +94,7 @@ func allDigits(s string) bool {
 	return true
 }
 
+// parseUint64Text lê só dígitos, sem strconv, para não passar por float.
 func parseUint64Text(s string) (uint64, error) {
 	var n uint64
 	for _, r := range s {

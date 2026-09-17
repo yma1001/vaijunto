@@ -13,7 +13,7 @@ import (
 )
 
 // StartTestServer sobe o servidor em 127.0.0.1:0 com state.json temporário.
-// Não usa data/state.json do aluno.
+// Não usa o data/state.json do clone, para o teste não misturar estado da demo.
 func StartTestServer(t *testing.T) (config.Config, *store.Store, *Server) {
 	t.Helper()
 	st, err := store.New(filepath.Join(t.TempDir(), "state.json"))

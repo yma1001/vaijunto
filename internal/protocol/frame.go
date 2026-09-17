@@ -23,12 +23,14 @@ import (
 // mesmo quando o sistema operacional entrega o segmento TCP aos pedaços.
 
 var (
-	ErrFrameTooLarge     = errors.New("frame exceeds MAX_PAYLOAD")
-	ErrFrameEmpty        = errors.New("frame length is zero")
-	ErrIncompleteFrame   = errors.New("incomplete frame")
-	ErrPayloadTooLarge   = errors.New("payload exceeds MAX_PAYLOAD")
+	ErrFrameTooLarge   = errors.New("frame exceeds MAX_PAYLOAD")
+	ErrFrameEmpty      = errors.New("frame length is zero")
+	ErrIncompleteFrame = errors.New("incomplete frame")
+	ErrPayloadTooLarge = errors.New("payload exceeds MAX_PAYLOAD")
 )
 
+// ReadFrame lê exatamente 4 bytes de tamanho e depois N bytes de JSON.
+// io.ReadFull espera o restante se o SO entregar o segmento TCP aos pedaços.
 func ReadFrame(r io.Reader, maxPayload int) ([]byte, error) {
 	var header [4]byte
 	if _, err := io.ReadFull(r, header[:]); err != nil {
@@ -56,6 +58,7 @@ func ReadFrame(r io.Reader, maxPayload int) ([]byte, error) {
 	return buf, nil
 }
 
+// WriteFrame envia o header big-endian e o payload, repetindo Write se for parcial.
 func WriteFrame(w io.Writer, payload []byte) error {
 	if len(payload) == 0 {
 		return ErrFrameEmpty
@@ -84,6 +87,7 @@ func writeFull(w io.Writer, p []byte) error {
 	return nil
 }
 
+// MaxPayloadOK é o mesmo limite usado no header, exposto para testes e o cliente.
 func MaxPayloadOK(n, max int) error {
 	if n > max {
 		return ErrPayloadTooLarge

@@ -8,6 +8,7 @@ import (
 	"testing"
 )
 
+// TestWriteReadRoundTrip: um frame escrito é lido de volta inteiro.
 func TestWriteReadRoundTrip(t *testing.T) {
 	payload := []byte(`{"version":1,"operation":"PING","requestId":"a"}`)
 	var buf bytes.Buffer
@@ -23,6 +24,7 @@ func TestWriteReadRoundTrip(t *testing.T) {
 	}
 }
 
+// TestCoalescedMessages: dois Write no mesmo buffer viram dois ReadFrame (TCP pode colar).
 func TestCoalescedMessages(t *testing.T) {
 	var buf bytes.Buffer
 	_ = WriteFrame(&buf, []byte(`{"a":1}`))
@@ -40,6 +42,7 @@ func TestCoalescedMessages(t *testing.T) {
 	}
 }
 
+// TestPartialReads: o SO pode entregar 1 byte por vez; ReadFrame espera completar.
 func TestPartialReads(t *testing.T) {
 	payload := []byte(`{"hello":"world-partial-read"}`)
 	var raw bytes.Buffer
@@ -54,6 +57,7 @@ func TestPartialReads(t *testing.T) {
 	}
 }
 
+// TestIncompleteHeader: conexão caiu no meio dos 4 bytes do tamanho.
 func TestIncompleteHeader(t *testing.T) {
 	r := bytes.NewReader([]byte{0x00, 0x00})
 	_, err := ReadFrame(r, 1024)
@@ -62,6 +66,7 @@ func TestIncompleteHeader(t *testing.T) {
 	}
 }
 
+// TestIncompletePayload: header promete 10 bytes e só chegam 3.
 func TestIncompletePayload(t *testing.T) {
 	var hdr [4]byte
 	binary.BigEndian.PutUint32(hdr[:], 10)
@@ -72,6 +77,7 @@ func TestIncompletePayload(t *testing.T) {
 	}
 }
 
+// TestFrameTooLarge: N maior que MAX_PAYLOAD é recusado sem alocar o corpo.
 func TestFrameTooLarge(t *testing.T) {
 	var hdr [4]byte
 	binary.BigEndian.PutUint32(hdr[:], 5000)
@@ -81,6 +87,7 @@ func TestFrameTooLarge(t *testing.T) {
 	}
 }
 
+// TestEmptyFrameRejected: N=0 é frame inválido.
 func TestEmptyFrameRejected(t *testing.T) {
 	var hdr [4]byte
 	_, err := ReadFrame(bytes.NewReader(hdr[:]), 100)
@@ -89,6 +96,7 @@ func TestEmptyFrameRejected(t *testing.T) {
 	}
 }
 
+// oneByteReader simula um socket que entrega no máximo 1 byte por Read.
 type oneByteReader struct {
 	r io.Reader
 }

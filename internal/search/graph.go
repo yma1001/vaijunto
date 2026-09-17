@@ -1,3 +1,7 @@
+// Pacote search monta itinerários a partir das caronas publicadas.
+// O grafo não é uma estrutura global: é derivado na hora da busca.
+// Cidade = vértice; trecho com vaga na data = aresta dirigida etiquetada
+// com o rideId. DFS de caminhos simples combina motoristas diferentes.
 package search
 
 import (
@@ -7,18 +11,13 @@ import (
 	"github.com/yma1001/vaijunto/internal/domain"
 )
 
-// O grafo NÃO é uma estrutura global sincronizada. É derivado das caronas
-// ativas no momento da busca (ainda sob RLock no caller). Cidade = vértice;
-// trecho com availableSeats > 0 na data pedida = aresta dirigida.
-//
-// DFS em caminhos simples (não revisita cidade) evita ciclos. Limites
-// MAX_TRANSFERS / MAX_RESULTS são técnicos do protótipo.
-
+// edge é um trecho de uma carona ativa na data pedida.
 type edge struct {
 	ride         domain.Ride
 	segmentIndex int
 }
 
+// step é um passo do caminho durante o DFS (qual carona, qual segmento).
 type step struct {
 	rideID string
 	si     int
@@ -26,6 +25,8 @@ type step struct {
 	to     string
 }
 
+// Search encontra caminhos origem→destino na data. Não decrementa vaga.
+// Ordena por preço total, depois menos baldeações, depois IDs.
 func Search(rides []domain.Ride, origin, dest, date string, maxTransfers, maxResults int) []domain.Itinerary {
 	origin = domain.NormalizeCity(origin)
 	dest = domain.NormalizeCity(dest)
@@ -110,6 +111,7 @@ func Search(rides []domain.Ride, origin, dest, date string, maxTransfers, maxRes
 	return out
 }
 
+// buildItinerary compacta segmentos consecutivos da mesma carona num único Leg.
 func buildItinerary(rides []domain.Ride, path []step, maxTransfers int) domain.Itinerary {
 	if len(path) == 0 {
 		return domain.Itinerary{}
@@ -176,6 +178,7 @@ func buildItinerary(rides []domain.Ride, path []step, maxTransfers int) domain.I
 	return domain.Itinerary{TotalPrice: total, Transfers: transfers, Legs: legs}
 }
 
+// transfersOf conta trocas de rideId no caminho (corte antecipado do DFS).
 func transfersOf(path []step) int {
 	if len(path) == 0 {
 		return 0
@@ -191,6 +194,7 @@ func transfersOf(path []step) int {
 	return n
 }
 
+// copyVisited clona o conjunto de cidades do caminho para o ramo do DFS não compartilhar mapa.
 func copyVisited(in map[string]bool) map[string]bool {
 	out := make(map[string]bool, len(in)+1)
 	for k, v := range in {
@@ -199,6 +203,7 @@ func copyVisited(in map[string]bool) map[string]bool {
 	return out
 }
 
+// itineraryKey desempata a ordenação quando preço e transfers coincidem.
 func itineraryKey(it domain.Itinerary) string {
 	var b strings.Builder
 	for _, l := range it.Legs {

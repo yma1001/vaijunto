@@ -14,12 +14,14 @@ type Prompter struct {
 	EOF bool
 }
 
+// NewPrompter liga stdin/stdout (ou buffers nos testes) ao leitor de menu.
 func NewPrompter(in io.Reader, out io.Writer) *Prompter {
 	sc := bufio.NewScanner(in)
 	sc.Split(scanPromptLine)
 	return &Prompter{sc: sc, out: out}
 }
 
+// Read imprime o prompt e devolve a linha normalizada. EOF marca p.EOF para o menu sair.
 func (p *Prompter) Read(prompt string) string {
 	fmt.Fprint(p.out, prompt)
 	if !p.sc.Scan() {
@@ -35,6 +37,7 @@ func NormalizeLine(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// scanPromptLine aceita LF, CRLF e CR sozinho (Windows/Linux no mesmo menu).
 func scanPromptLine(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	if atEOF && len(data) == 0 {
 		return 0, nil, nil
@@ -63,6 +66,7 @@ func scanPromptLine(data []byte, atEOF bool) (advance int, token []byte, err err
 	return 0, nil, nil
 }
 
+// dropCR tira o CR final de uma linha LF (caso Windows CRLF já partido).
 func dropCR(data []byte) []byte {
 	if len(data) > 0 && data[len(data)-1] == '\r' {
 		return data[:len(data)-1]
