@@ -258,22 +258,52 @@ PC 3  motorista  ──TCP──►  PC 1  porta 5000  →  Docker  -p 5000:5000
 PC 2  passageiro ──TCP──►
 ```
 
-O laboratório é **Linux**. Cliente em macOS/Windows: os mesmos `SERVER_HOST`/`SERVER_PORT` (`export` no macOS; `$env:SERVER_HOST` no PowerShell). O repositório é público: não precisa logar no GitHub para clonar.
+O laboratório é **Linux**. Cliente em macOS/Windows: os mesmos `SERVER_HOST`/`SERVER_PORT` (`export` no macOS; `$env:SERVER_HOST` no PowerShell). O repositório é público: **não precisa de conta GitHub** nem para clonar nem para baixar o ZIP.
 
 **Não** rode `go run ./cmd/server` (nem `./bin/server`) no PC 1 se o Compose já estiver no ar. São dois processos na mesma porta **e** dois `state.json` diferentes.
 
 Contas seed (senha `senha123`): `motorista1`/`motorista2`, `passageiro1`/`passageiro2`/`passageiro3`. Menu inicial: `1 entrar` · `2 criar conta` · `3 PING` · `0 sair`.
 
-### PC 1 — servidor
+### Como pegar o projeto (em qualquer PC)
 
-Abra um terminal na pasta do projeto.
+Escolha **uma** das duas. Os comandos depois (`docker compose`, `go run`) são iguais; só muda o nome da pasta.
+
+**Opção A — `git clone`** (se o PC tiver `git`):
 
 ```bash
 git clone https://github.com/yma1001/vaijunto.git
 cd vaijunto
-# se já tiver o clone:
+# se a pasta já existir de outro dia:
 git pull
 ```
+
+**Opção B — baixar o ZIP no GitHub** (sem git):
+
+1. No navegador, abra [https://github.com/yma1001/vaijunto](https://github.com/yma1001/vaijunto).
+2. Botão verde **Code**.
+3. **Download ZIP**.
+4. Extraia. A pasta fica `vaijunto-main` (é o branch `main`).
+5. No terminal:
+
+```bash
+cd ~/Downloads    # ou onde o navegador salvou
+unzip -o vaijunto-main.zip
+cd vaijunto-main
+```
+
+Pelo terminal, sem abrir o site:
+
+```bash
+curl -L -o vaijunto-main.zip https://github.com/yma1001/vaijunto/archive/refs/heads/main.zip
+unzip -o vaijunto-main.zip
+cd vaijunto-main
+```
+
+ZIP não tem `git pull`: para atualizar, baixe de novo e extraia por cima. Confira se está na pasta que tem `docker-compose.yml` e `go.mod` (`ls docker-compose.yml go.mod`).
+
+### PC 1 — servidor
+
+Abra um terminal **na pasta do projeto** (`vaijunto` se clonou, `vaijunto-main` se baixou o ZIP).
 
 Confira o nome do serviço (tem que ser o que o Compose listar; neste repo é `server`):
 
@@ -327,10 +357,7 @@ Se abrir `VAIJUNTO — cliente PASSAGEIRO` e o `3) PING` responder `PONG`, o con
 
 ### PC 2 — passageiro
 
-```bash
-git clone https://github.com/yma1001/vaijunto.git
-cd vaijunto
-```
+Pegue o projeto (clone **ou** ZIP, seção acima) e entre na pasta.
 
 Troque pelo IP que o PC 1 mostrou (exemplo `192.168.1.37`):
 
@@ -350,9 +377,9 @@ docker run -it --rm -e SERVER_HOST=192.168.1.37 -e SERVER_PORT=5000 vaijunto-pas
 
 ### PC 3 — motorista
 
+Pegue o projeto (clone **ou** ZIP) e entre na pasta.
+
 ```bash
-git clone https://github.com/yma1001/vaijunto.git
-cd vaijunto
 SERVER_HOST=192.168.1.37 SERVER_PORT=5000 go run ./cmd/driver
 ```
 
