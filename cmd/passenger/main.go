@@ -1,11 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"sort"
-	"strings"
 
 	"github.com/yma1001/vaijunto/internal/client"
 	"github.com/yma1001/vaijunto/internal/cliui"
@@ -22,81 +21,89 @@ func main() {
 		os.Exit(1)
 	}
 	defer c.Close()
+	run(c, os.Stdin, os.Stdout)
+}
 
-	in := bufio.NewScanner(os.Stdin)
-	read := func(prompt string) string {
-		fmt.Print(prompt)
-		if !in.Scan() {
-			return ""
-		}
-		return strings.TrimSpace(in.Text())
-	}
+func run(c *client.Client, in io.Reader, out io.Writer) {
+	prompt := cliui.NewPrompter(in, out)
+	read := prompt.Read
 
 	var lastSearch []protocol.ItineraryView
 	var lastReservations []protocol.ReservationView
 
 	for {
+		if prompt.EOF {
+			return
+		}
 		if c.Role == "" {
-			fmt.Println("1) entrar  2) criar conta  3) PING  0) sair")
-			switch read("> ") {
+			fmt.Fprintln(out, "1) entrar  2) criar conta  3) PING  0) sair")
+			choice := read("> ")
+			if prompt.EOF {
+				return
+			}
+			switch choice {
 			case "1":
 				u := read("usuário: ")
 				p := read("senha: ")
 				if err := c.Login(u, p); err != nil {
-					fmt.Println(cliui.FriendlyError(err))
+					fmt.Fprintln(out, cliui.FriendlyError(err))
 					continue
 				}
 				if c.Role != protocol.RolePassenger {
-					fmt.Println("esta conta não é PASSENGER; use o cliente motorista")
+					fmt.Fprintln(out, "esta conta não é PASSENGER; use o cliente motorista")
 					c.Role = ""
 					continue
 				}
-				fmt.Println("ok, autenticado como", c.Name)
+				fmt.Fprintln(out, "ok, autenticado como", c.Name)
 			case "2":
 				cliui.RegisterInteractive(c, read, protocol.RolePassenger)
 			case "3":
 				if err := c.Ping(); err != nil {
-					fmt.Println(cliui.FriendlyError(err))
+					fmt.Fprintln(out, cliui.FriendlyError(err))
 				} else {
-					fmt.Println("PONG")
+					fmt.Fprintln(out, "PONG")
 				}
 			case "0":
 				return
 			default:
-				fmt.Println("opção inválida")
+				fmt.Fprintln(out, "opção inválida")
 			}
 			continue
 		}
 
-		fmt.Println("1) buscar itinerários  2) confirmar (número da última busca)")
-		fmt.Println("3) minhas reservas  4) cancelar reserva  5) ping  6) logout  0) sair")
-		switch read("> ") {
+		fmt.Fprintln(out, "1) buscar itinerários  2) confirmar (número da última busca)")
+		fmt.Fprintln(out, "3) minhas reservas  4) cancelar reserva  5) ping  6) logout  0) sair")
+		choice := read("> ")
+		if prompt.EOF {
+			return
+		}
+		switch choice {
 		case "1":
 			orig := read("origem: ")
 			dest := read("destino: ")
 			iso, err := cliui.ParseBRDate(read("data (DD/MM/AAAA): "))
 			if err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(out, err)
 				continue
 			}
-			var out protocol.SearchItinerariesResult
+			var searchOut protocol.SearchItinerariesResult
 			if err := c.MustOK(protocol.OpSearchItineraries, protocol.SearchItinerariesData{
 				Origin: orig, Destination: dest, Date: iso,
-			}, &out); err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+			}, &searchOut); err != nil {
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 				continue
 			}
-			lastSearch = out.Itineraries
+			lastSearch = searchOut.Itineraries
 			if len(lastSearch) == 0 {
-				fmt.Println("nenhum itinerário encontrado")
+				fmt.Fprintln(out, "nenhum itinerário encontrado")
 				continue
 			}
 			for i, it := range lastSearch {
-				fmt.Print(cliui.FormatItinerary(i+1, it))
+				fmt.Fprint(out, cliui.FormatItinerary(i+1, it))
 			}
 		case "2":
 			if len(lastSearch) == 0 {
-				fmt.Println("faça uma busca primeiro")
+				fmt.Fprintln(out, "faça uma busca primeiro")
 				continue
 			}
 			ids := make([]string, len(lastSearch))
@@ -105,7 +112,7 @@ func main() {
 			}
 			idx, err := cliui.ResolveListChoice(read("número do itinerário: "), ids)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(out, err)
 				continue
 			}
 			it := lastSearch[idx]
@@ -113,57 +120,60 @@ func main() {
 			for _, l := range it.Legs {
 				legs = append(legs, protocol.ConfirmLeg{RideID: l.RideID, Origin: l.Origin, Destination: l.Destination})
 			}
-			var out protocol.ConfirmReservationResult
-			if err := c.MustOK(protocol.OpConfirmReservation, protocol.ConfirmReservationData{Legs: legs}, &out); err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+			var conf protocol.ConfirmReservationResult
+			if err := c.MustOK(protocol.OpConfirmReservation, protocol.ConfirmReservationData{Legs: legs}, &conf); err != nil {
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 				continue
 			}
-			fmt.Print(cliui.FormatReservation(0, out.Reservation))
+			fmt.Fprint(out, cliui.FormatReservation(0, conf.Reservation))
 		case "3":
 			list, err := loadReservations(c)
 			if err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 				continue
 			}
 			lastReservations = list
-			printReservations(list)
+			printReservations(out, list)
 		case "4":
 			list, err := ensureReservations(c, lastReservations)
 			if err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 				continue
 			}
 			lastReservations = list
-			printReservations(list)
+			printReservations(out, list)
 			ids := make([]string, len(list))
 			for i, r := range list {
 				ids[i] = r.ReservationID
 			}
 			idx, err := cliui.ResolveListChoice(read("número da reserva: "), ids)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(out, err)
 				continue
 			}
-			fmt.Println("ID:", list[idx].ReservationID)
-			var out protocol.CancelReservationResult
-			if err := c.MustOK(protocol.OpCancelReservation, protocol.CancelReservationData{ReservationID: list[idx].ReservationID}, &out); err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+			fmt.Fprintln(out, "ID:", list[idx].ReservationID)
+			var cancelOut protocol.CancelReservationResult
+			if err := c.MustOK(protocol.OpCancelReservation, protocol.CancelReservationData{ReservationID: list[idx].ReservationID}, &cancelOut); err != nil {
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 				continue
 			}
-			fmt.Print(cliui.FormatReservation(idx+1, out.Reservation))
+			fmt.Fprint(out, cliui.FormatReservation(idx+1, cancelOut.Reservation))
 		case "5":
 			if err := c.Ping(); err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 			} else {
-				fmt.Println("PONG")
+				fmt.Fprintln(out, "PONG")
 			}
 		case "6":
-			_ = c.MustOK(protocol.OpLogout, map[string]any{}, nil)
-			return
+			if err := c.Logout(); err != nil {
+				fmt.Fprintln(out, cliui.FriendlyError(err))
+			}
+			lastSearch = nil
+			lastReservations = nil
 		case "0":
 			return
 		default:
-			fmt.Println("opção inválida")
+			fmt.Fprintln(out, "opção inválida")
 		}
 	}
 }
@@ -186,13 +196,13 @@ func ensureReservations(c *client.Client, last []protocol.ReservationView) ([]pr
 	return loadReservations(c)
 }
 
-func printReservations(list []protocol.ReservationView) {
+func printReservations(w io.Writer, list []protocol.ReservationView) {
 	if len(list) == 0 {
-		fmt.Println("nenhuma reserva")
+		fmt.Fprintln(w, "nenhuma reserva")
 		return
 	}
 	for i, r := range list {
-		fmt.Print(cliui.FormatReservation(i+1, r))
+		fmt.Fprint(w, cliui.FormatReservation(i+1, r))
 	}
 }
 

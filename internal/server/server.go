@@ -60,6 +60,8 @@ func logStd() *log.Logger {
 func (s *Server) Store() *store.Store { return s.st }
 
 func (s *Server) Addr() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.ln == nil {
 		return ""
 	}
@@ -75,7 +77,9 @@ func (s *Server) ListenAndServe() error {
 }
 
 func (s *Server) Serve(ln net.Listener) error {
+	s.mu.Lock()
 	s.ln = ln
+	s.mu.Unlock()
 	s.log.Printf("listening on %s (data=%s)", ln.Addr().String(), s.st.Path())
 	for {
 		conn, err := ln.Accept()
@@ -94,8 +98,12 @@ func (s *Server) Serve(ln net.Listener) error {
 }
 
 func (s *Server) Close() error {
-	if s.ln != nil {
-		_ = s.ln.Close()
+	s.mu.Lock()
+	ln := s.ln
+	s.ln = nil
+	s.mu.Unlock()
+	if ln != nil {
+		_ = ln.Close()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

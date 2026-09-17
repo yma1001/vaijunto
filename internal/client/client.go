@@ -43,7 +43,41 @@ func (c *Client) nextID() string {
 	return fmt.Sprintf("req-%d-%d", time.Now().UnixNano(), n)
 }
 
+func (c *Client) clearIdentity() {
+	c.UserID = ""
+	c.Role = ""
+	c.Name = ""
+}
+
+func (c *Client) Reconnect() error {
+	d := net.Dialer{Timeout: c.cfg.ConnectTimeout}
+	conn, err := d.Dial("tcp", c.cfg.ServerAddr())
+	if err != nil {
+		return err
+	}
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
+	c.conn = conn
+	return nil
+}
+
+// Logout envia LOGOUT (o servidor fecha o TCP), limpa a identidade local
+// e abre uma conexão nova para o próximo LOGIN no mesmo processo.
+func (c *Client) Logout() error {
+	if c.conn != nil {
+		_ = c.MustOK(protocol.OpLogout, map[string]any{}, nil)
+		_ = c.Close()
+		c.conn = nil
+	}
+	c.clearIdentity()
+	return c.Reconnect()
+}
+
 func (c *Client) Call(operation, requestID string, data any) (protocol.Response, error) {
+	if c.conn == nil {
+		return protocol.Response{}, fmt.Errorf("not connected")
+	}
 	if requestID == "" {
 		requestID = c.nextID()
 	}
@@ -108,6 +142,11 @@ func (c *Client) Ping() error {
 }
 
 func (c *Client) Login(user, pass string) error {
+	if c.conn == nil {
+		if err := c.Reconnect(); err != nil {
+			return err
+		}
+	}
 	var out protocol.LoginResult
 	if err := c.MustOK(protocol.OpLogin, protocol.LoginData{Username: user, Password: pass}, &out); err != nil {
 		return err

@@ -1,12 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/yma1001/vaijunto/internal/client"
@@ -24,74 +23,82 @@ func main() {
 		os.Exit(1)
 	}
 	defer c.Close()
+	run(c, os.Stdin, os.Stdout)
+}
 
-	in := bufio.NewScanner(os.Stdin)
-	read := func(prompt string) string {
-		fmt.Print(prompt)
-		if !in.Scan() {
-			return ""
-		}
-		return strings.TrimSpace(in.Text())
-	}
+func run(c *client.Client, in io.Reader, out io.Writer) {
+	prompt := cliui.NewPrompter(in, out)
+	read := prompt.Read
 
 	var lastRides []protocol.RideView
 
 	for {
+		if prompt.EOF {
+			return
+		}
 		if c.Role == "" {
-			fmt.Println("1) entrar  2) criar conta  3) PING  0) sair")
-			switch read("> ") {
+			fmt.Fprintln(out, "1) entrar  2) criar conta  3) PING  0) sair")
+			choice := read("> ")
+			if prompt.EOF {
+				return
+			}
+			switch choice {
 			case "1":
 				u := read("usuário: ")
 				p := read("senha: ")
 				if err := c.Login(u, p); err != nil {
-					fmt.Println(cliui.FriendlyError(err))
+					fmt.Fprintln(out, cliui.FriendlyError(err))
 					continue
 				}
 				if c.Role != protocol.RoleDriver {
-					fmt.Println("esta conta não é DRIVER; use o cliente passageiro")
+					fmt.Fprintln(out, "esta conta não é DRIVER; use o cliente passageiro")
 					c.Role = ""
 					continue
 				}
-				fmt.Println("ok, autenticado como", c.Name)
+				fmt.Fprintln(out, "ok, autenticado como", c.Name)
 			case "2":
 				cliui.RegisterInteractive(c, read, protocol.RoleDriver)
 			case "3":
 				if err := c.Ping(); err != nil {
-					fmt.Println(cliui.FriendlyError(err))
+					fmt.Fprintln(out, cliui.FriendlyError(err))
 				} else {
-					fmt.Println("PONG")
+					fmt.Fprintln(out, "PONG")
 				}
 			case "0":
 				return
 			default:
-				fmt.Println("opção inválida")
+				fmt.Fprintln(out, "opção inválida")
 			}
 			continue
 		}
 
-		fmt.Println("1) publicar carona  2) minhas caronas  3) passageiros da carona")
-		fmt.Println("4) cancelar carona  5) ping  6) logout  0) sair")
-		switch read("> ") {
+		fmt.Fprintln(out, "1) publicar carona  2) minhas caronas  3) passageiros da carona")
+		fmt.Fprintln(out, "4) cancelar carona  5) ping  6) logout  0) sair")
+		choice := read("> ")
+		if prompt.EOF {
+			return
+		}
+		switch choice {
 		case "1":
-			fmt.Print(cliui.CitiesPrompt)
+			fmt.Fprint(out, cliui.CitiesPrompt)
 			cities, err := cliui.ParseCities(read(""))
 			if err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(out, err)
 				continue
 			}
 			iso, err := cliui.ParseBRDate(read("data (DD/MM/AAAA): "))
 			if err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(out, err)
 				continue
 			}
 			hora := read("horário (HH:MM): ")
 			if _, err := time.Parse("15:04", hora); err != nil {
-				fmt.Println("horário inválido: use HH:MM (exemplo: 08:00)")
+				fmt.Fprintln(out, "horário inválido: use HH:MM (exemplo: 08:00)")
 				continue
 			}
 			cap, err := strconv.Atoi(read("assentos: "))
 			if err != nil || cap < 1 {
-				fmt.Println("informe um número de assentos maior que zero")
+				fmt.Fprintln(out, "informe um número de assentos maior que zero")
 				continue
 			}
 			prices := make([]int64, 0, len(cities)-1)
@@ -100,7 +107,7 @@ func main() {
 				raw := read(fmt.Sprintf("Preço %s → %s (R$): ", cities[i], cities[i+1]))
 				cents, err := cliui.ParseBRLToCents(raw)
 				if err != nil {
-					fmt.Println(err)
+					fmt.Fprintln(out, err)
 					okPrices = false
 					break
 				}
@@ -109,74 +116,76 @@ func main() {
 			if !okPrices {
 				continue
 			}
-			var out protocol.RideView
+			var ride protocol.RideView
 			if err := c.MustOK(protocol.OpPublishRide, protocol.PublishRideData{
 				Cities: cities, DepartureDate: iso, DepartureTime: hora, Capacity: cap, SegmentPrices: prices,
-			}, &out); err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+			}, &ride); err != nil {
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 				continue
 			}
-			fmt.Print(cliui.FormatRide(0, out, nil))
+			fmt.Fprint(out, cliui.FormatRide(0, ride, nil))
 		case "2":
 			rides, err := loadDriverRides(c)
 			if err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 				continue
 			}
 			lastRides = rides
-			printDriverRides(c, rides)
+			printDriverRides(out, c, rides)
 		case "3":
 			rides, err := ensureRides(c, lastRides)
 			if err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 				continue
 			}
 			lastRides = rides
-			printDriverRides(c, rides)
+			printDriverRides(out, c, rides)
 			idx, err := pickRide(read("número da carona: "), rides)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(out, err)
 				continue
 			}
 			pass, err := loadPassengers(c, rides[idx].RideID)
 			if err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 				continue
 			}
-			fmt.Print(cliui.FormatRide(idx+1, rides[idx], pass))
+			fmt.Fprint(out, cliui.FormatRide(idx+1, rides[idx], pass))
 		case "4":
 			rides, err := ensureRides(c, lastRides)
 			if err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 				continue
 			}
 			lastRides = rides
-			printDriverRides(c, rides)
+			printDriverRides(out, c, rides)
 			idx, err := pickRide(read("número da carona: "), rides)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(out, err)
 				continue
 			}
-			fmt.Println("ID:", rides[idx].RideID)
-			var out protocol.RideView
-			if err := c.MustOK(protocol.OpCancelRide, protocol.CancelRideData{RideID: rides[idx].RideID}, &out); err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+			fmt.Fprintln(out, "ID:", rides[idx].RideID)
+			var cancelled protocol.RideView
+			if err := c.MustOK(protocol.OpCancelRide, protocol.CancelRideData{RideID: rides[idx].RideID}, &cancelled); err != nil {
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 				continue
 			}
-			fmt.Print(cliui.FormatRide(idx+1, out, nil))
+			fmt.Fprint(out, cliui.FormatRide(idx+1, cancelled, nil))
 		case "5":
 			if err := c.Ping(); err != nil {
-				fmt.Println(cliui.FriendlyError(err))
+				fmt.Fprintln(out, cliui.FriendlyError(err))
 			} else {
-				fmt.Println("PONG")
+				fmt.Fprintln(out, "PONG")
 			}
 		case "6":
-			_ = c.MustOK(protocol.OpLogout, map[string]any{}, nil)
-			return
+			if err := c.Logout(); err != nil {
+				fmt.Fprintln(out, cliui.FriendlyError(err))
+			}
+			lastRides = nil
 		case "0":
 			return
 		default:
-			fmt.Println("opção inválida")
+			fmt.Fprintln(out, "opção inválida")
 		}
 	}
 }
@@ -197,14 +206,14 @@ func ensureRides(c *client.Client, last []protocol.RideView) ([]protocol.RideVie
 	return loadDriverRides(c)
 }
 
-func printDriverRides(c *client.Client, rides []protocol.RideView) {
+func printDriverRides(w io.Writer, c *client.Client, rides []protocol.RideView) {
 	if len(rides) == 0 {
-		fmt.Println("nenhuma carona publicada")
+		fmt.Fprintln(w, "nenhuma carona publicada")
 		return
 	}
 	for i, r := range rides {
 		pass, _ := loadPassengers(c, r.RideID)
-		fmt.Print(cliui.FormatRide(i+1, r, pass))
+		fmt.Fprint(w, cliui.FormatRide(i+1, r, pass))
 	}
 }
 

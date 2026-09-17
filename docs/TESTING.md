@@ -116,6 +116,7 @@ Docker: Docker Desktop. `docker build` / `docker compose` no PowerShell; `bash s
 | Busca não reserva (INV-5) | `TestSearchDoesNotReserve` |
 | Itinerário composto via TCP | `TestCompositeSearchAndConfirmTCP` |
 | REGISTER + LOGOUT fecha a conexão | `TestRegisterLoginLogout` |
+| CLI logout volta ao menu, troca de conta, só 0 sai | `cmd/passenger/main_test.go`, `cmd/driver/main_test.go` |
 | REGISTER DRIVER+PASSENGER, duplicata, persistência após `Store` restart | `TestRegisterBothRolesDuplicateAndRestart`, `TestRegisterBothRolesDuplicateAndRestartTCP` |
 | Rota com 2 e 4+ cidades | `TestPublishRideTwoAndFourCities`, `TestParseCitiesTwoAndFour` |
 | Data BR na CLI (`DD/MM/AAAA` ↔ ISO) | `internal/cliui/cliui_test.go` (`TestParseBRDate`) |

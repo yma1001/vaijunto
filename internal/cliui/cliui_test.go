@@ -1,6 +1,7 @@
 package cliui
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -209,6 +210,56 @@ func TestFriendlyError(t *testing.T) {
 	}
 	if got := FriendlyError(errString("dial tcp 127.0.0.1:5000: connection refused")); got != "falha de comunicação com o servidor" {
 		t.Fatal(got)
+	}
+}
+
+func TestNormalizeLineStripsCRLFSpaceAndNUL(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"6", "6"},
+		{" 6 ", "6"},
+		{"6\r", "6"},
+		{"6\x00", "6"},
+		{"6\x00\r", "6"},
+		{"\x006\x00", "6"},
+	}
+	for _, c := range cases {
+		if got := NormalizeLine(c.in); got != c.want {
+			t.Fatalf("%q: got %q want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestPrompterAcceptsLFCRLFAndLoneCR(t *testing.T) {
+	var out bytes.Buffer
+	p := NewPrompter(strings.NewReader("6\r\n 7 \n8\x00\n9\r10\n"), &out)
+	got := []string{p.Read(""), p.Read(""), p.Read(""), p.Read(""), p.Read("")}
+	want := []string{"6", "7", "8", "9", "10"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("token %d: got %q want %q (%v)", i, got[i], want[i], got)
+		}
+	}
+	if p.EOF {
+		t.Fatal("should not be EOF yet")
+	}
+	if p.Read("") != "" || !p.EOF {
+		t.Fatal("expected EOF after last line")
+	}
+}
+
+func TestPrompterCRLFIsSingleToken(t *testing.T) {
+	var out bytes.Buffer
+	p := NewPrompter(strings.NewReader("6\r\n"), &out)
+	if got := p.Read("> "); got != "6" {
+		t.Fatalf("got %q", got)
+	}
+	if p.Read("> ") != "" || !p.EOF {
+		t.Fatal("CRLF must not produce an extra empty line")
+	}
+	if !strings.Contains(out.String(), "> ") {
+		t.Fatal("prompt should be written")
 	}
 }
 
