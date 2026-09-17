@@ -258,14 +258,16 @@ Clientes no host apontam para `127.0.0.1:5000`.
 
 **PC 1 = servidor.** **PC 2 = passageiro.** **PC 3 = motorista.**
 
-A conversa é TCP na porta **5000**. Todos os clientes apontam para o **IP da LAN do PC 1**. Ninguém usa o IP do PC 2, o IP do PC 3, `127.0.0.1` nos PCs remotos, nem as bridges internas do Docker (`172.17` / `172.18` / `172.19` típicos do `docker0`).
+A conversa é TCP na porta **5000**. **PC 2 e PC 3 sempre usam o IP LAN real do PC 1.**
+
+Nos comandos de PCs diferentes o placeholder é `172.16.XXX.X` — **modelo visual**, não um IP para copiar. Veja [Qual IP usar](#qual-ip-usar-server_host).
 
 ```text
 PC 3  motorista
         \
          \  TCP
           \
-      IP_DO_PC1:5000
+      172.16.XXX.X:5000
           PC 1  servidor  (Docker  -p 5000:5000)
           /
          /  TCP
@@ -321,47 +323,44 @@ Para atualizar: baixe o ZIP outra vez. Extraia **fora** da pasta antiga, ou conf
 
 ### Qual IP usar (`SERVER_HOST`)
 
-Só o PC 1 descobre o IP. Nos PCs 2 e 3 você **cola o IP do PC 1**.
+**PC 1 = servidor.** **PC 2 = passageiro.** **PC 3 = motorista.**  
+PC 2 e PC 3 **sempre** apontam para o IP LAN **real** do PC 1.
 
-No **PC 1**, depois do servidor no ar:
+O modelo nos comandos é:
+
+```text
+172.16.XXX.X
+```
+
+Isso é **só um desenho**. Não digite `XXX` nem copie o modelo. As salas da UEFS usam sub-redes diferentes (`172.16.103.X`, `172.16.201.X`, …): o terceiro octeto (`XXX`) muda; o último `X` é o número da máquina.
+
+O IP real do PC 1 sai de:
 
 ```bash
 hostname -I
 ```
 
-Exemplo de saída real no laboratório:
+Rode isso **no PC servidor**, depois que o container estiver no ar.
 
-```text
-172.16.103.5 172.17.0.1 172.18.0.1 172.19.0.1
-```
+**ATENÇÃO:** `172.16.XXX.X` é só um modelo. Rode `hostname -I` no PC servidor e coloque o IP LAN real mostrado ali.
 
-| Endereço | O que é | Usar no `SERVER_HOST`? |
-|---|---|---|
-| `172.16.103.5` | IP da LAN da sala (rede física dos PCs da UEFS) | **sim — este** |
-| `172.17.0.1` | bridge interna do Docker | **não** |
-| `172.18.0.1` | outra bridge Docker | **não** |
-| `172.19.0.1` | outra bridge Docker | **não** |
-| IP do PC 2 (ex. `172.16.103.9`) | endereço do passageiro | **não** |
-| IP do PC 3 | endereço do motorista | **não** |
-| `127.0.0.1` | só o próprio computador | **não** nos PCs 2 e 3 |
+Exemplos (não copie se o seu PC 1 mostrou outro número):
 
-O IP correto é o da rede em que os três computadores se enxergam. Em `172.16.x` da UEFS, costuma ser o **primeiro** da lista que **não** é `.0.1` de bridge Docker. Se `hostname -I` mostrar `192.168…` ou `10.…` junto com `172.17.0.1`, use o `192.168` / `10.`, não o `172.17`.
+| `hostname -I` no PC 1 | `SERVER_HOST` nos PCs 2 e 3 |
+|---|---|
+| `172.16.103.10 172.17.0.1` | `SERVER_HOST=172.16.103.10` |
+| `172.16.201.8 172.17.0.1` | `SERVER_HOST=172.16.201.8` |
 
-Nos comandos abaixo aparece `IP_DO_PC1`. **Não digite as letras `IP_DO_PC1`.** Substitua pelo número que o `hostname -I` mostrou no computador **servidor**.
+Na lista do `hostname -I`, o da LAN costuma ser o `172.16.…` que **não** termina em `.0.1`. Os `172.17.0.1`, `172.18.0.1`, `172.19.0.1` são bridges internas do Docker — **não** use.
 
-Se no PC 1 o `hostname -I` foi `172.16.103.5 172.17.0.1 172.18.0.1`, então:
-
-- PC 2: `SERVER_HOST=172.16.103.5`
-- PC 3: `SERVER_HOST=172.16.103.5`
-
-O PC 2 pode ter IP `172.16.103.9`. Ele **não** usa `172.16.103.9` como `SERVER_HOST`. Continua usando o do PC 1 (`172.16.103.5`).
+O PC 2 pode ser `172.16.103.9`. Ele **não** coloca o próprio IP no `SERVER_HOST`. Continua usando o do PC 1 (ex. `172.16.103.10`).
 
 ```text
 PC 3  motorista
         \
          \  TCP
           \
-      172.16.103.5:5000
+      172.16.XXX.X:5000     ← IP LAN real do PC 1 (hostname -I)
           PC 1  servidor
           /
          /  TCP
@@ -369,7 +368,37 @@ PC 3  motorista
 PC 2  passageiro
 ```
 
-Não copie um IP de exemplo do README se o `hostname -I` do **seu** PC 1 mostrou outro.
+Não use:
+
+- o IP do próprio PC 2
+- o IP do próprio PC 3
+- `172.17.x.x` / `172.18.x.x` / `172.19.x.x` das bridges Docker
+- `127.0.0.1` quando cliente e servidor estão em **computadores diferentes**
+
+Dois casos:
+
+**Mesmo computador** (teste no PC 1, outro terminal):
+
+```bash
+SERVER_HOST=127.0.0.1 SERVER_PORT=5000 go run ./cmd/passenger
+```
+
+Se o passageiro estiver **em container no mesmo PC** do servidor, `127.0.0.1` dentro do container é o próprio container. Use `--network host`:
+
+```bash
+docker run -it --rm --network host \
+  -e SERVER_HOST=127.0.0.1 \
+  -e SERVER_PORT=5000 \
+  vaijunto-passenger
+```
+
+**PCs diferentes** (laboratório):
+
+```text
+SERVER_HOST=172.16.XXX.X
+```
+
+Substitua pelo IP LAN real do PC 1 (`hostname -I`). Não digite `XXX`.
 
 ### PC 1 — servidor
 
@@ -405,7 +434,7 @@ docker compose ps
 hostname -I
 ```
 
-Anote o **IP da LAN do PC 1** (tabela acima). Esse valor é o `IP_DO_PC1` dos outros PCs.
+Anote o **IP da LAN do PC 1** (`172.16.…` que não é bridge Docker). Esse número entra no `SERVER_HOST` dos PCs 2 e 3 no lugar de `172.16.XXX.X`.
 
 Log (escuta `0.0.0.0:5000`; o log mostra `data=/data/state.json`):
 
@@ -415,13 +444,13 @@ docker compose logs -f server
 
 `Ctrl+C` sai dos logs e **não** derruba o servidor.
 
-Teste no próprio PC 1, **outro terminal** (`127.0.0.1` vale **só aqui**):
+Teste **no mesmo PC 1**, outro terminal (`127.0.0.1` vale **só aqui**):
 
 ```bash
 SERVER_HOST=127.0.0.1 SERVER_PORT=5000 go run ./cmd/passenger
 ```
 
-Se o Go do laboratório falhar (veja o erro de toolchain no PC 2), use a imagem do passageiro com `SERVER_HOST=127.0.0.1`. Menu `3) PING` → `PONG` confirma que o container aceita TCP. `0` sai.
+Se o Go falhar e o passageiro for um container **neste mesmo PC**, use `--network host` (veja [Qual IP usar](#qual-ip-usar-server_host)). Menu `3) PING` → `PONG` confirma que o servidor aceita TCP. `0` sai.
 
 ### PC 2 — passageiro
 
@@ -433,14 +462,10 @@ go version
 
 Se o Go estiver ok (1.22+) e aceitar o módulo:
 
-```bash
-SERVER_HOST=IP_DO_PC1 SERVER_PORT=5000 go run ./cmd/passenger
-```
-
-`IP_DO_PC1` **não** é literal. Exemplo, se o PC 1 mostrou `172.16.103.5`:
+> **ATENÇÃO:** `172.16.XXX.X` é só um modelo. Rode `hostname -I` no PC servidor e coloque o IP LAN real mostrado ali.
 
 ```bash
-SERVER_HOST=172.16.103.5 SERVER_PORT=5000 go run ./cmd/passenger
+SERVER_HOST=172.16.XXX.X SERVER_PORT=5000 go run ./cmd/passenger
 ```
 
 Erro **real** visto no laboratório:
@@ -452,27 +477,31 @@ go: download go1.22 for linux/amd64: toolchain not available
 
 Isso **não** é TCP, **não** é IP e **não** é bug do VAIJUNTO. O Go daquela máquina não conseguiu usar/baixar a toolchain 1.22 do `go.mod`. **Não perca tempo consertando o Go do laboratório.** Use Docker:
 
+> **ATENÇÃO:** `172.16.XXX.X` é só um modelo. Rode `hostname -I` no PC servidor e coloque o IP LAN real mostrado ali.
+
 ```bash
 docker build -t vaijunto-passenger --build-arg BUILD_TARGET=passenger .
 
 docker run -it --rm \
-  -e SERVER_HOST=IP_DO_PC1 \
+  -e SERVER_HOST=172.16.XXX.X \
   -e SERVER_PORT=5000 \
   vaijunto-passenger
 ```
 
-De novo: troque `IP_DO_PC1` pelo IP da LAN do PC 1 (ex. `172.16.103.5`).
-
-A tela mostra `Servidor: 172.16.103.5:5000`. Primeiro: **`3) PING`**. Se vier `PONG`, o PC 2 está falando com o container do PC 1. Depois: `1) entrar` com `passageiro1` / `senha123`.
+A tela deve mostrar o IP **real** do PC 1 (ex. `Servidor: 172.16.103.10:5000`). Primeiro: **`3) PING`**. Se vier `PONG`, o PC 2 está falando com o container do PC 1. Depois: `1) entrar` com `passageiro1` / `senha123`.
 
 **`docker compose ps` vazio no PC 2 é normal.** O `docker-compose.yml` só tem o serviço `server`, e o servidor roda **no PC 1**. No PC 2 o cliente é `go run ./cmd/passenger` **ou** a imagem `BUILD_TARGET=passenger`. Não precisa haver container listado no Compose do PC 2.
 
 ### PC 3 — motorista
 
-Mesma pasta correta do ZIP. Se o Go funcionar:
+Mesma pasta correta do ZIP. Mesmo IP LAN do PC 1 que o passageiro usou.
+
+> **ATENÇÃO:** `172.16.XXX.X` é só um modelo. Rode `hostname -I` no PC servidor e coloque o IP LAN real mostrado ali.
+
+Se o Go funcionar:
 
 ```bash
-SERVER_HOST=IP_DO_PC1 SERVER_PORT=5000 go run ./cmd/driver
+SERVER_HOST=172.16.XXX.X SERVER_PORT=5000 go run ./cmd/driver
 ```
 
 Se aparecer o mesmo erro de toolchain (`download go1.22` / `toolchain not available`):
@@ -481,12 +510,12 @@ Se aparecer o mesmo erro de toolchain (`download go1.22` / `toolchain not availa
 docker build -t vaijunto-driver --build-arg BUILD_TARGET=driver .
 
 docker run -it --rm \
-  -e SERVER_HOST=IP_DO_PC1 \
+  -e SERVER_HOST=172.16.XXX.X \
   -e SERVER_PORT=5000 \
   vaijunto-driver
 ```
 
-`IP_DO_PC1` = IP da LAN do PC 1, o mesmo do passageiro. **`docker compose ps` vazio no PC 3 também é normal.**
+**`docker compose ps` vazio no PC 3 também é normal.**
 
 Primeiro `3) PING`. Login: `motorista1` / `senha123`. Publicar: cidades, data `DD/MM/AAAA`, hora, assentos, preço por trecho em R$.
 
@@ -524,14 +553,16 @@ docker compose ps
 hostname -I
 ```
 
-Anote: **IP_DO_PC1** (o da LAN, não `172.17`/`172.18`/`172.19`).
+Anote o IP LAN (`172.16.…`, não `172.17`/`172.18`/`172.19`). Nos PCs 2 e 3 ele entra no lugar de `172.16.XXX.X`.
+
+> **ATENÇÃO:** `172.16.XXX.X` é só um modelo. Rode `hostname -I` no PC servidor e coloque o IP LAN real mostrado ali.
 
 **PC 2**
 
 ```bash
 docker build -t vaijunto-passenger --build-arg BUILD_TARGET=passenger .
 docker run -it --rm \
-  -e SERVER_HOST=IP_DO_PC1 \
+  -e SERVER_HOST=172.16.XXX.X \
   -e SERVER_PORT=5000 \
   vaijunto-passenger
 ```
@@ -541,18 +572,16 @@ docker run -it --rm \
 ```bash
 docker build -t vaijunto-driver --build-arg BUILD_TARGET=driver .
 docker run -it --rm \
-  -e SERVER_HOST=IP_DO_PC1 \
+  -e SERVER_HOST=172.16.XXX.X \
   -e SERVER_PORT=5000 \
   vaijunto-driver
 ```
 
-**Não digite `IP_DO_PC1` literalmente.** Substitua pelo IP da LAN do `hostname -I` no computador **servidor**.
-
 Não use:
 
-- IP do PC 2
-- IP do PC 3
-- `127.0.0.1` nos PCs 2 e 3
+- o IP do próprio PC 2
+- o IP do próprio PC 3
+- `127.0.0.1` nos PCs 2 e 3 (isso é **mesmo PC**)
 - `172.17.x.x` / `172.18.x.x` / `172.19.x.x` das bridges Docker
 
 ### Se der `connection refused`
@@ -579,7 +608,7 @@ sudo ufw allow 5000/tcp
 
 ### Se der `i/o timeout` ou o PING não volta
 
-IP errado, PCs em redes diferentes, ou porta 5000 bloqueada. Rode `hostname -I` de novo **no PC 1** e atualize o `SERVER_HOST` nos PCs 2 e 3.
+IP errado, PCs em redes diferentes, ou porta 5000 bloqueada. Rode `hostname -I` de novo **no PC 1** e coloque esse IP LAN no `SERVER_HOST` dos PCs 2 e 3 (no lugar de `172.16.XXX.X`).
 
 ### Demo que vale na arguição
 
