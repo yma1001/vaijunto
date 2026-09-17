@@ -100,7 +100,7 @@ Fonte: CHAT.md §67.4
 Status: CONFIRMADO (projeto)
 Fonte: CHAT.md §35, §67.12
 
-Arquivo `DATA_PATH` (padrão `data/state.json`). Escrita atômica (`tmp` + `rename`) ainda sob o `Lock`. Docker: volume `/data`. Sessão TCP não persiste.
+Arquivo `DATA_PATH` (padrão `data/state.json`, resolvido para absoluto no `Store`). Escrita atômica (`tmp` + `rename`) ainda sob o `Lock`. Docker: volume `/data`. Sessão TCP e IP do host não persistem. Relativo segue o cwd; `./bin/server` e o volume Docker são dois estados se ambos tiverem só o seed.
 
 ## DEC-015 — Sem notificação push
 

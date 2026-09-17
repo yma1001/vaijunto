@@ -316,6 +316,96 @@ func TestPersistenceAcrossServerRestart(t *testing.T) {
 	}
 }
 
+// Confirm, persist, new Store+process, LOGIN as the same passenger, LIST_RESERVATIONS
+// must return the reservation. Session userId must match persisted passengerId.
+func TestListReservationsAfterServerRestart(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	st, err := store.New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	cfg := config.Load()
+	host, port, _ := net.SplitHostPort(ln.Addr().String())
+	cfg.ServerHost, cfg.ServerPort = host, port
+	cfg.ReadTimeout = 3 * time.Second
+	cfg.WriteTimeout = 3 * time.Second
+	cfg.ConnectTimeout = 2 * time.Second
+	silent := log.New(io.Discard, "", 0)
+	srv := New(cfg, st, silent)
+	go func() { _ = srv.Serve(ln) }()
+	ride := publishSample(t, cfg)
+
+	p, err := client.Dial(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Login("passageiro1", "senha123"); err != nil {
+		t.Fatal(err)
+	}
+	passengerID := p.UserID
+	var conf protocol.ConfirmReservationResult
+	if err := p.MustOK(protocol.OpConfirmReservation, protocol.ConfirmReservationData{
+		Legs: []protocol.ConfirmLeg{{RideID: ride.RideID, Origin: "Salvador", Destination: "Jequié"}},
+	}, &conf); err != nil {
+		t.Fatal(err)
+	}
+	_ = p.Close()
+	_ = srv.Close()
+
+	st2, err := store.New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln2, _ := net.Listen("tcp", "127.0.0.1:0")
+	host, port, _ = net.SplitHostPort(ln2.Addr().String())
+	cfg.ServerHost, cfg.ServerPort = host, port
+	srv2 := New(cfg, st2, silent)
+	go func() { _ = srv2.Serve(ln2) }()
+	t.Cleanup(func() { _ = srv2.Close() })
+
+	p2, err := client.Dial(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p2.Close()
+	if err := p2.Login("passageiro1", "senha123"); err != nil {
+		t.Fatal(err)
+	}
+	if p2.UserID != passengerID {
+		t.Fatalf("userId changed after reload: %s vs %s", p2.UserID, passengerID)
+	}
+	var list protocol.ListReservationsResult
+	if err := p2.MustOK(protocol.OpListReservations, map[string]any{}, &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Reservations) != 1 {
+		t.Fatalf("LIST_RESERVATIONS empty after restart: %+v", list)
+	}
+	if list.Reservations[0].ReservationID != conf.Reservation.ReservationID {
+		t.Fatalf("reservation lost: %+v", list.Reservations[0])
+	}
+	if list.Reservations[0].PassengerID != passengerID {
+		t.Fatalf("LIST filter/userId mismatch: %s vs %s", list.Reservations[0].PassengerID, passengerID)
+	}
+	d, err := client.Dial(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if err := d.Login("motorista1", "senha123"); err != nil {
+		t.Fatal(err)
+	}
+	var rides protocol.ListDriverRidesResult
+	if err := d.MustOK(protocol.OpListDriverRides, map[string]any{}, &rides); err != nil {
+		t.Fatal(err)
+	}
+	if len(rides.Rides) != 1 || rides.Rides[0].Segments[0].AvailableSeats != 0 {
+		t.Fatalf("seats not decremented after restart: %+v", rides.Rides)
+	}
+}
+
 func TestRepeatedConfirmSameRequestIDOverTCP(t *testing.T) {
 	cfg, _, _ := startTestServer(t)
 	ride := publishSample(t, cfg)

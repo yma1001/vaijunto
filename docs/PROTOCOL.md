@@ -109,7 +109,7 @@ TCP connect
 
 Queda abrupta: a goroutine da conexão termina; reservas já confirmadas permanecem; nada fica “preso” porque o lock nunca é segurado durante I/O.
 
-Após **reinício do servidor**, a conexão cai. O cliente conecta de novo e faz `LOGIN` com a mesma conta (persistida).
+Após **reinício do servidor**, a conexão cai. O cliente conecta de novo e faz `LOGIN` com a mesma conta (persistida). `LIST_RESERVATIONS` (e `SEARCH_ITINERARIES`) vêm do JSON no `DATA_PATH` do processo; o cache da CLI (`lastReservations`) começa vazio. Trocar o IP do host não recria o arquivo — desde que o servidor abra o **mesmo** `DATA_PATH` (absoluto ou volume Docker `/data/state.json`).
 
 ## 6. Autenticação e papéis
 

@@ -63,7 +63,7 @@ O mutex **não** envolve leitura/escrita de socket.
 
 ## Persistência
 
-Na subida, o servidor lê `DATA_PATH`. Se o arquivo não existe, grava o seed de usuários. Mutações gravam JSON atômico (`*.tmp` + `rename`) ainda sob o `Lock`. Em Docker o diretório `/data` é volume. A sessão TCP **não** está no arquivo.
+Na subida, o servidor lê `DATA_PATH` (resolvido para caminho absoluto; o log mostra `data=...`). Se o arquivo não existe, grava o seed de usuários. Mutações gravam JSON atômico (`*.tmp` + `rename`) ainda sob o `Lock`. Reservas entram no JSON junto com usuários e caronas; no load o `confirmIndex` é **reconstruído** a partir das reservas. Em Docker o diretório `/data` é o volume `vaijunto-data` — não é o `data/state.json` relativo do `./bin/server`. A sessão TCP **não** está no arquivo. IP/`SERVER_HOST` também não.
 
 ## Onde está o código
 

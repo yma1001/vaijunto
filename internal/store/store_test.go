@@ -2,10 +2,12 @@ package store
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -219,6 +221,152 @@ func TestPersistenceRestartKeepsRides(t *testing.T) {
 	list := st2.ListReservations("user-pass-1")
 	if len(list) != 1 {
 		t.Fatal("reservation not persisted")
+	}
+}
+
+func confirmSalvadorFeira(t *testing.T, st *Store, passengerID, requestID string, ride domain.Ride) domain.Reservation {
+	t.Helper()
+	res, err := st.ConfirmReservation(passengerID, requestID, []domain.LegInput{
+		{RideID: ride.RideID, Origin: "Salvador", Destination: "Feira de Santana"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+func assertPassengerReservationAndSeats(t *testing.T, st *Store, passengerID, reservationID, rideID string, wantSeats int) {
+	t.Helper()
+	if _, err := st.Authenticate("passageiro1", "senha123"); err != nil {
+		t.Fatal("users must survive restart:", err)
+	}
+	if _, err := st.Authenticate("motorista1", "senha123"); err != nil {
+		t.Fatal("driver must survive restart:", err)
+	}
+	rides := st.ListDriverRides("user-driver-1")
+	if len(rides) != 1 || rides[0].RideID != rideID {
+		t.Fatalf("rides lost after reload: %#v", rides)
+	}
+	if rides[0].Segments[0].AvailableSeats != wantSeats {
+		t.Fatalf("seats after reload: want %d got %d", wantSeats, rides[0].Segments[0].AvailableSeats)
+	}
+	list := st.ListReservations(passengerID)
+	if len(list) != 1 {
+		t.Fatalf("LIST/GetReservations empty after reload: %#v", list)
+	}
+	if list[0].ReservationID != reservationID {
+		t.Fatalf("reservation id %s vs %s", list[0].ReservationID, reservationID)
+	}
+	if list[0].PassengerID != passengerID {
+		t.Fatalf("passengerId mismatch after reload: %s vs session/persisted %s", list[0].PassengerID, passengerID)
+	}
+	if list[0].Status != domain.ResConfirmed {
+		t.Fatalf("status %s", list[0].Status)
+	}
+}
+
+// Regression: confirm → persist → new Store on the same temp file must LIST the
+// reservation for that passenger and keep seats decremented. IP is not in the file.
+func TestConfirmReservationSurvivesNewStoreLoad(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	st, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ride := publishABC(t, st, 2)
+	res := confirmSalvadorFeira(t, st, "user-pass-1", "req-reload", ride)
+
+	raw := readPersisted(t, st)
+	if !bytes.Contains(raw, []byte(`"reservations"`)) {
+		t.Fatal("confirm must persist reservations in JSON")
+	}
+	var file persistedState
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Reservations) != 1 {
+		t.Fatalf("reservations omitted from JSON: %+v", file)
+	}
+	if file.Reservations[0].ReservationID != res.ReservationID || file.Reservations[0].PassengerID != "user-pass-1" {
+		t.Fatalf("persisted reservation: %+v", file.Reservations[0])
+	}
+
+	st2, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st2.Path() != st.Path() {
+		t.Fatalf("DATA_PATH changed: %s vs %s", st.Path(), st2.Path())
+	}
+	assertPassengerReservationAndSeats(t, st2, "user-pass-1", res.ReservationID, ride.RideID, 1)
+}
+
+func wipeConfirmIndexInFile(t *testing.T, path string) {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		t.Fatal(err)
+	}
+	obj["confirmIndex"] = json.RawMessage(`{}`)
+	out, err := json.MarshalIndent(obj, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// confirmIndex may be missing/empty after a crash or an old file. Load must still
+// return the reservation AND rebuild the idempotency index from reservations.
+func TestLoadRebuildsConfirmIndexFromReservations(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	st, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ride := publishABC(t, st, 2)
+	in := []domain.LegInput{{RideID: ride.RideID, Origin: "Salvador", Destination: "Feira de Santana"}}
+	res, err := st.ConfirmReservation("user-pass-1", "req-idem-reload", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wipeConfirmIndexInFile(t, path)
+
+	st2, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPassengerReservationAndSeats(t, st2, "user-pass-1", res.ReservationID, ride.RideID, 1)
+
+	again, err := st2.ConfirmReservation("user-pass-1", "req-idem-reload", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ReservationID != res.ReservationID {
+		t.Fatalf("confirmIndex not rebuilt from reservations: %s vs %s", again.ReservationID, res.ReservationID)
+	}
+	if rideSeats(t, st2, "user-driver-1", ride.RideID)[0] != 1 {
+		t.Fatal("retransmit after reload consumed another seat")
+	}
+}
+
+func TestResolveDataPathIsAbsolute(t *testing.T) {
+	got, err := resolveDataPath("data/state.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(got) {
+		t.Fatalf("DATA_PATH must be stored absolute, got %s", got)
+	}
+	if !strings.HasSuffix(got, "data/state.json") && !strings.HasSuffix(got, `data\state.json`) {
+		t.Fatalf("suffix lost: %s", got)
 	}
 }
 

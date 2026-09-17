@@ -16,13 +16,13 @@ import (
 )
 
 var (
-	ErrNotFound        = errors.New("not found")
-	ErrNoSeats         = errors.New("no seats")
-	ErrForbidden       = errors.New("forbidden")
-	ErrValidation      = errors.New("validation")
-	ErrAlreadyExists   = errors.New("already exists")
+	ErrNotFound         = errors.New("not found")
+	ErrNoSeats          = errors.New("no seats")
+	ErrForbidden        = errors.New("forbidden")
+	ErrValidation       = errors.New("validation")
+	ErrAlreadyExists    = errors.New("already exists")
 	ErrAlreadyCancelled = errors.New("already cancelled")
-	ErrConflict        = errors.New("conflict")
+	ErrConflict         = errors.New("conflict")
 )
 
 // Store é o estado canônico do servidor.
@@ -61,19 +61,33 @@ type persistedState struct {
 }
 
 func New(path string) (*Store, error) {
+	abs, err := resolveDataPath(path)
+	if err != nil {
+		return nil, err
+	}
 	s := &Store{
 		users:        map[string]domain.User{},
 		usersByID:    map[string]domain.User{},
 		rides:        map[string]domain.Ride{},
 		reservations: map[string]domain.Reservation{},
 		confirmIndex: map[string]string{},
-		path:         path,
+		path:         abs,
 		now:          time.Now,
 	}
 	if err := s.loadOrSeed(); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// resolveDataPath torna DATA_PATH absoluto em relação ao cwd do processo.
+// Caminho relativo ainda depende de onde o servidor foi iniciado: use
+// caminho absoluto (ou o volume Docker /data) para não criar um segundo state.json.
+func resolveDataPath(path string) (string, error) {
+	if path == "" {
+		path = "data/state.json"
+	}
+	return filepath.Abs(path)
 }
 
 func (s *Store) Path() string { return s.path }
@@ -93,17 +107,15 @@ func (s *Store) loadOrSeed() error {
 	}
 	for _, u := range st.Users {
 		s.users[u.Username] = u
-		s.usersByID[u.UserID] = u
 	}
 	for _, r := range st.Rides {
 		s.rides[r.RideID] = r
 	}
+	// Não pular reservas no unmarshal: cancelled, sem requestId, etc. entram no mapa.
 	for _, r := range st.Reservations {
 		s.reservations[r.ReservationID] = r
 	}
-	if st.ConfirmIndex != nil {
-		s.confirmIndex = st.ConfirmIndex
-	}
+	s.rebuildIndexesLocked()
 	if len(s.users) == 0 {
 		s.seedUsersLocked()
 		return s.persistLocked()
@@ -121,7 +133,24 @@ func (s *Store) seedUsersLocked() {
 	}
 	for _, u := range seeds {
 		s.users[u.Username] = u
+	}
+	s.rebuildIndexesLocked()
+}
+
+// rebuildIndexesLocked reconstrói usersByID e o índice de idempotência a partir
+// dos mapas canônicos. confirmIndex persistido pode estar vazio/desatualizado;
+// a fonte de verdade no load são as reservas.
+func (s *Store) rebuildIndexesLocked() {
+	s.usersByID = make(map[string]domain.User, len(s.users))
+	for _, u := range s.users {
 		s.usersByID[u.UserID] = u
+	}
+	s.confirmIndex = make(map[string]string, len(s.reservations))
+	for _, r := range s.reservations {
+		if r.RequestID == "" || r.ReservationID == "" {
+			continue
+		}
+		s.confirmIndex[confirmKey(r.PassengerID, r.RequestID)] = r.ReservationID
 	}
 }
 
