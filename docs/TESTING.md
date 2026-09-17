@@ -220,4 +220,4 @@ docker restart vj-server
 
 ## Demonstração no laboratório (PCs distintos)
 
-Orientada a **Linux** (três PCs da UEFS). Ver README, seção Docker em três PCs. Cliente em outro SO: `SERVER_HOST=<IP do PC A>` (PowerShell: `$env:SERVER_HOST`). O teste físico de LAN é pendência externa se quem testa não estiver no laboratório; os scripts estão prontos.
+Orientada a **Linux** (três PCs da UEFS). Passo a passo completo (Compose, IP da LAN, firewall, PING, demo da última vaga): README, seção [Laboratório: três PCs (UEFS)](../README.md#laboratório-três-pcs-uefs). Cliente em outro SO: `SERVER_HOST=<IP do PC 1>` (PowerShell: `$env:SERVER_HOST`).

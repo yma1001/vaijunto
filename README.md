@@ -34,6 +34,8 @@ cd vaijunto
 
 O caminho mais claro é **Linux** (laboratório da UEFS e a máquina do aluno). macOS e Windows repetem os mesmos testes, com as diferenças de instalação, variáveis de ambiente e nome dos binários.
 
+**Laboratório (PC 1 servidor + PC 2 passageiro + PC 3 motorista):** passo a passo em [Laboratório: três PCs (UEFS)](#laboratório-três-pcs-uefs).
+
 ## Build e teste
 
 Linux (primeiro caminho):
@@ -247,26 +249,183 @@ docker compose up -d
 
 Clientes no host apontam para `127.0.0.1:5000`.
 
-## Docker em três PCs do laboratório
+## Laboratório: três PCs (UEFS)
 
-O laboratório da UEFS é **Linux** (comandos abaixo). Cliente em macOS ou Windows: compile `driver`/`passenger` nessa máquina e aponte `SERVER_HOST` para o IP do PC A (`export SERVER_HOST=<IP do PC A>` no macOS/Linux; `$env:SERVER_HOST = "<IP do PC A>"` no PowerShell). O protocolo TCP é o mesmo.
+Cenário da demo: **PC 1 = servidor (Docker Compose)**, **PC 2 = passageiro**, **PC 3 = motorista**. A conversa é TCP na porta **5000**. O cliente usa o **IP da LAN do PC 1**, nunca o `172.x` do container.
 
-```mermaid
-flowchart TB
-  subgraph A["PC A (servidor)"]
-    SA["docker run -p 5000:5000 -v vaijunto-data:/data vaijunto-server"]
-  end
-  subgraph B["PC B"]
-    PB["SERVER_HOST=&lt;IP_A&gt; vaijunto-passenger"]
-  end
-  subgraph C["PC C"]
-    PC["SERVER_HOST=&lt;IP_A&gt; vaijunto-driver"]
-  end
-  B -->|TCP 5000| A
-  C -->|TCP 5000| A
+```text
+PC 3  motorista  ──TCP──►  PC 1  porta 5000  →  Docker  -p 5000:5000  →  servidor VAIJUNTO
+PC 2  passageiro ──TCP──►
 ```
 
-PC A:
+O laboratório é **Linux**. Cliente em macOS/Windows: os mesmos `SERVER_HOST`/`SERVER_PORT` (`export` no macOS; `$env:SERVER_HOST` no PowerShell). O repositório é público: não precisa logar no GitHub para clonar.
+
+**Não** rode `go run ./cmd/server` (nem `./bin/server`) no PC 1 se o Compose já estiver no ar. São dois processos na mesma porta **e** dois `state.json` diferentes.
+
+Contas seed (senha `senha123`): `motorista1`/`motorista2`, `passageiro1`/`passageiro2`/`passageiro3`. Menu inicial: `1 entrar` · `2 criar conta` · `3 PING` · `0 sair`.
+
+### PC 1 — servidor
+
+Abra um terminal na pasta do projeto.
+
+```bash
+git clone https://github.com/yma1001/vaijunto.git
+cd vaijunto
+# se já tiver o clone:
+git pull
+```
+
+Confira o nome do serviço (tem que ser o que o Compose listar; neste repo é `server`):
+
+```bash
+docker compose config --services
+```
+
+Se `docker` pedir permissão, use `sudo docker compose …` no resto dos comandos.
+
+Build e sobe **só** o servidor, em segundo plano:
+
+```bash
+docker compose build
+docker compose up -d server
+```
+
+(equivalente numa linha: `docker compose up -d --build server`)
+
+Confira se está no ar e se a porta do **computador** está publicada:
+
+```bash
+docker compose ps
+```
+
+O esperado é algo como `0.0.0.0:5000->5000/tcp` (ou `:::5000->5000/tcp`). Sem isso, o PC 2/3 não entra.
+
+Log (o servidor escuta em `0.0.0.0:5000`; o log mostra `data=/data/state.json`):
+
+```bash
+docker compose logs -f server
+```
+
+`Ctrl+C` sai do log **sem** desligar o container.
+
+IP da LAN do PC 1 (é este que os outros PCs vão usar):
+
+```bash
+hostname -I
+# ou: ip -4 addr
+```
+
+Pode aparecer `192.168.1.37  172.17.0.1`. Use o da rede da sala (`192.168…` / `10.…` / `172.16–31.…` da LAN da UEFS). **Não** use `172.17.0.1` nem `172.18.x` — isso é bridge do Docker, só existe neste PC.
+
+Teste no próprio PC 1, **outro terminal**, antes de ir aos colegas:
+
+```bash
+SERVER_HOST=127.0.0.1 SERVER_PORT=5000 go run ./cmd/passenger
+```
+
+Se abrir `VAIJUNTO — cliente PASSAGEIRO` e o `3) PING` responder `PONG`, o container está aceitando TCP. `0` sai.
+
+### PC 2 — passageiro
+
+```bash
+git clone https://github.com/yma1001/vaijunto.git
+cd vaijunto
+```
+
+Troque pelo IP que o PC 1 mostrou (exemplo `192.168.1.37`):
+
+```bash
+SERVER_HOST=192.168.1.37 SERVER_PORT=5000 go run ./cmd/passenger
+```
+
+A tela deve mostrar `Servidor: 192.168.1.37:5000`. Primeira coisa: **`3) PING`**. Se vier `PONG`, o PC 2 está falando com o container do PC 1 pela rede. Depois: `1) entrar` com `passageiro1` / `senha123` (ou `2 criar conta`).
+
+Se o laboratório **não tiver Go** no PC 2, use a imagem Docker do cliente (ainda apontando para o IP do **host** A, não `172.x`):
+
+```bash
+docker compose build
+docker build -t vaijunto-passenger --build-arg BUILD_TARGET=passenger .
+docker run -it --rm -e SERVER_HOST=192.168.1.37 -e SERVER_PORT=5000 vaijunto-passenger
+```
+
+### PC 3 — motorista
+
+```bash
+git clone https://github.com/yma1001/vaijunto.git
+cd vaijunto
+SERVER_HOST=192.168.1.37 SERVER_PORT=5000 go run ./cmd/driver
+```
+
+Sem Go no PC 3:
+
+```bash
+docker build -t vaijunto-driver --build-arg BUILD_TARGET=driver .
+docker run -it --rm -e SERVER_HOST=192.168.1.37 -e SERVER_PORT=5000 vaijunto-driver
+```
+
+`3) PING` de novo. Login: `motorista1` / `senha123`. Publique uma carona (cidades, data `DD/MM/AAAA`, hora, assentos, preço por trecho em R$).
+
+### Resumo
+
+```bash
+# PC 1
+docker compose build
+docker compose up -d server
+docker compose ps          # 0.0.0.0:5000->5000/tcp
+hostname -I                # anote o IP da LAN, não o 172.17
+
+# PC 2
+SERVER_HOST=IP_DO_PC1 SERVER_PORT=5000 go run ./cmd/passenger
+
+# PC 3
+SERVER_HOST=IP_DO_PC1 SERVER_PORT=5000 go run ./cmd/driver
+```
+
+Se `docker compose config --services` listar outro nome, use esse nome no lugar de `server`. Não chute.
+
+### Se der `connection refused`
+
+No PC 1:
+
+```bash
+docker compose ps
+docker compose logs server
+ss -ltn | grep 5000
+```
+
+Tem que haver algo escutando em `*:5000` ou `0.0.0.0:5000`. Se o Compose não estiver `Up`, `docker compose up -d server` de novo.
+
+Firewall no PC 1:
+
+```bash
+sudo ufw status
+```
+
+Se estiver `active` e houver permissão no laboratório:
+
+```bash
+sudo ufw allow 5000/tcp
+```
+
+### Se der `i/o timeout` ou o PING não volta
+
+Quase sempre: IP errado, PCs em redes diferentes, ou a porta 5000 bloqueada. Confira de novo `hostname -I` no PC 1 — o endereço muda de uma sala/rede para outra. Atualize o `SERVER_HOST` nos PCs 2 e 3.
+
+### Demo que vale na arguição
+
+1. PC 3 publica Salvador → Feira de Santana → Jequié com **1** assento.
+2. PC 2 (passageiro1) busca e confirma.
+3. Outro passageiro (segundo terminal no PC 2, ou um quarto PC) busca a mesma rota e tenta confirmar.
+
+Esperado: **um** `OK` e o outro `NO_SEATS` / “sem vagas”. Nunca os dois confirmados com capacidade 1. Isso é o TCP entre máquinas reais + a atomicidade da reserva.
+
+Depois: `docker compose restart` no PC 1 → nos clientes, LOGIN de novo e no passageiro o menu **`3) minhas reservas`**. O volume `vaijunto-data` guarda o JSON; a sessão TCP não.
+
+Para parar o servidor **sem apagar** contas/caronas: `docker compose down` no PC 1. **Nunca** `docker compose down -v` (isso apaga o volume).
+
+### Equivalente sem Compose (mesmo efeito)
+
+Se preferir `docker run` no PC 1:
 
 ```bash
 docker build -t vaijunto-server --build-arg BUILD_TARGET=server .
@@ -274,22 +433,9 @@ docker run -d --name vaijunto-server --restart unless-stopped \
   -p 5000:5000 -v vaijunto-data:/data \
   -e LISTEN_HOST=0.0.0.0 -e SERVER_PORT=5000 -e DATA_PATH=/data/state.json \
   vaijunto-server
-ip -4 addr   # anote o IP da LAN, NÃO o 172.x do container
 ```
 
-PC B e PC C (depois de `docker build` da imagem correspondente, ou copie a imagem):
-
-```bash
-docker build -t vaijunto-passenger --build-arg BUILD_TARGET=passenger .
-docker run -it --rm -e SERVER_HOST=192.168.X.Y -e SERVER_PORT=5000 vaijunto-passenger
-
-docker build -t vaijunto-driver --build-arg BUILD_TARGET=driver .
-docker run -it --rm -e SERVER_HOST=192.168.X.Y -e SERVER_PORT=5000 vaijunto-driver
-```
-
-Firewall: liberar TCP 5000 no PC A. Se o cliente usar o IP interno do container, a conexão falha — use o IP do **host**.
-
-Persistência no Docker: o volume `vaijunto-data` sobrevive a `docker rm` e a mudança de IP da LAN. A sessão TCP não: após `docker restart` faça `LOGIN` outra vez e `LIST_RESERVATIONS` (menu 3 no passageiro). Não rode ao mesmo tempo um `./bin/server` com `data/state.json` do clone — é outro arquivo.
+O `-p 5000:5000` é o que “passa a porta”: 5000 no computador → 5000 no container. Sem isso, só quem está na rede interna do Docker alcança o processo.
 
 ## Documentação
 
