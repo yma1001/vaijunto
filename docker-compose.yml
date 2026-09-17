@@ -14,6 +14,8 @@ services:
       LISTEN_HOST: "0.0.0.0"
       DATA_PATH: /data/state.json
     volumes:
+      # Volume nomeado: sobrevive a docker rm / mudança de IP.
+      # NÃO é o data/state.json do clone (./bin/server). Não use down -v.
       - vaijunto-data:/data
 
 volumes:

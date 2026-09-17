@@ -55,12 +55,13 @@ Três terminais. Contas da tabela acima; senha `senha123`.
 Terminal 1:
 
 ```bash
-export DATA_PATH=data/state.json
+cd /caminho/para/vaijunto
+export DATA_PATH="$PWD/data/state.json"
 ./bin/server
-# escuta 0.0.0.0:5000
+# escuta 0.0.0.0:5000 — o log mostra o caminho absoluto do JSON
 ```
 
-(equivalente: `DATA_PATH=data/state.json ./bin/server`)
+(`DATA_PATH=data/state.json ./bin/server` também vale **se** o cwd for a raiz do repositório. Relativo segue o diretório de trabalho, não o do binário.)
 
 Terminal 2 (motorista):
 
@@ -92,6 +93,50 @@ Cliente em outra linguagem:
 python3 examples/python_ping.py 127.0.0.1 5000
 ```
 
+## Persistência e DATA_PATH (não confundir com IP)
+
+O JSON **não** guarda o IP do servidor. `SERVER_HOST` só diz ao **cliente** onde conectar. Trocar de rede, voltar para casa ou anotar outro IP **não** deve apagar reservas.
+
+O que parece “sumiu tudo, mas passageiro1 ainda entra” é quase sempre **dois arquivos** com o mesmo seed (`motorista1` / `passageiro1`…):
+
+| Como sobe o servidor | Arquivo |
+|---|---|
+| `./bin/server` na raiz do clone, `DATA_PATH=data/state.json` | `<clone>/data/state.json` (relativo ao **cwd**) |
+| `./bin/server` iniciado de outro diretório com o mesmo relativo | **outro** `data/state.json` naquele cwd |
+| Docker (`docker compose` / `docker run -v vaijunto-data:/data`) | volume `vaijunto-data` → `/data/state.json` **dentro** do container |
+
+Os dois têm as contas seed, então o LOGIN funciona. Caronas e reservas ficaram no arquivo que **não** está aberto agora.
+
+**Ubuntu / Linux (laboratório ou em casa)** — fixe um caminho absoluto e suba sempre o mesmo processo/volume:
+
+```bash
+cd /caminho/para/vaijunto
+export DATA_PATH="$PWD/data/state.json"
+./bin/server
+```
+
+O log na subida mostra `data=<caminho absoluto>`. Depois de um restart, no cliente passageiro: `LOGIN` de novo e **3) minhas reservas** (isso manda `LIST_RESERVATIONS` ao servidor; o cache local da CLI não sobrevive a restart/logout).
+
+**Windows (binário local):** na raiz do clone, prefira caminho absoluto:
+
+```powershell
+$env:DATA_PATH = (Join-Path (Get-Location) "data\state.json")
+.\bin\server.exe
+```
+
+**Windows / Linux / macOS + Docker:** use **sempre** o volume nomeado e `DATA_PATH=/data/state.json`. O IP (`SERVER_HOST`) muda; o volume não.
+
+```bash
+docker run -d --name vaijunto-server --restart unless-stopped \
+  -p 5000:5000 -v vaijunto-data:/data \
+  -e LISTEN_HOST=0.0.0.0 -e SERVER_PORT=5000 -e DATA_PATH=/data/state.json \
+  vaijunto-server
+```
+
+Não misture `.\bin\server.exe` + `data\state.json` com esse container esperando as mesmas reservas. `docker compose down` **sem** `-v` mantém `vaijunto-data`. Não use `down -v` nem apague o volume se quiser conservar o estado.
+
+Testes e smoke usam `DATA_PATH` temporário; não apontam para o `data/state.json` do aluno.
+
 ## macOS
 
 Instale o Go com Homebrew (`brew install go`) ou pelo pacote em [https://go.dev/dl/](https://go.dev/dl/). `go version` deve ser 1.22 ou mais novo.
@@ -103,7 +148,8 @@ Três terminais. Senha da demo: `senha123`.
 Terminal 1:
 
 ```bash
-export DATA_PATH=data/state.json
+cd /caminho/para/vaijunto
+export DATA_PATH="$PWD/data/state.json"
 ./bin/server
 ```
 
@@ -152,7 +198,7 @@ Três janelas do PowerShell. Senha da demo: `senha123`.
 Janela 1 (servidor):
 
 ```powershell
-$env:DATA_PATH = "data/state.json"
+$env:DATA_PATH = (Join-Path (Get-Location) "data\state.json")
 .\bin\server.exe
 # escuta 0.0.0.0:5000
 ```
@@ -243,7 +289,7 @@ docker run -it --rm -e SERVER_HOST=192.168.X.Y -e SERVER_PORT=5000 vaijunto-driv
 
 Firewall: liberar TCP 5000 no PC A. Se o cliente usar o IP interno do container, a conexão falha — use o IP do **host**.
 
-Persistência no Docker: o volume `vaijunto-data` sobrevive a `docker rm`. A sessão TCP não: após `docker restart` faça `LOGIN` outra vez.
+Persistência no Docker: o volume `vaijunto-data` sobrevive a `docker rm` e a mudança de IP da LAN. A sessão TCP não: após `docker restart` faça `LOGIN` outra vez e `LIST_RESERVATIONS` (menu 3 no passageiro). Não rode ao mesmo tempo um `./bin/server` com `data/state.json` do clone — é outro arquivo.
 
 ## Documentação
 

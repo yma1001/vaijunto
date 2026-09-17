@@ -24,8 +24,8 @@ O race detector encontra data races, não deadlock lógico nem double-booking. P
 Três terminais, senha `senha123`:
 
 ```bash
-# terminal 1
-export DATA_PATH=data/state.json
+# terminal 1 — na raiz do clone; absoluto evita segundo state.json se o cwd mudar
+export DATA_PATH="$PWD/data/state.json"
 ./bin/server
 
 # terminal 2
@@ -64,7 +64,7 @@ go build -o bin/passenger.exe ./cmd/passenger
 
 ```powershell
 # janela 1
-$env:DATA_PATH = "data/state.json"
+$env:DATA_PATH = (Join-Path (Get-Location) "data\state.json")
 .\bin\server.exe
 
 # janela 2
@@ -111,6 +111,8 @@ Docker: Docker Desktop. `docker build` / `docker compose` no PowerShell; `bash s
 | Disconnect no meio do frame | `TestIncompleteFrameAndAbruptDisconnect` |
 | Muitos clientes PING | `TestManyClients` |
 | Persistência + reinício do processo | `TestPersistenceRestartKeepsRides`, `TestPersistenceAcrossServerRestart` |
+| Reserva + LIST após novo `Store` / restart TCP | `TestConfirmReservationSurvivesNewStoreLoad`, `TestListReservationsAfterServerRestart` |
+| `confirmIndex` reconstruído no load | `TestLoadRebuildsConfirmIndexFromReservations` |
 | Invariantes ≥0 e ≤capacity | `TestNeverNegativeOrAboveCapacity` |
 | Carga / latência | `TestLoadishLatencyReported`, `cmd/loadtest` |
 | Busca não reserva (INV-5) | `TestSearchDoesNotReserve` |
@@ -126,6 +128,8 @@ Docker: Docker Desktop. `docker build` / `docker compose` no PowerShell; `bash s
 | Validação do envelope | `internal/protocol/message_test.go` |
 
 A CLI não imprime JSON cru: caronas, buscas e reservas saem com rótulos, data `DD/MM/AAAA`, rota com `→`, status em português (`ATIVA` / `CANCELADA` / `CONFIRMADA`) e `R$ 15,00`. O protocolo e o arquivo persistido continuam ISO + centavos.
+
+`DATA_PATH` relativo vale em relação ao **cwd do processo**, não ao IP e não ao diretório do binário. `./bin/server` e Docker (`/data/state.json` no volume `vaijunto-data`) são arquivos diferentes; ambos nascem com o seed, então o LOGIN funciona e as reservas “somem”. Prefira `$PWD/data/state.json` no Ubuntu e o volume nomeado no Docker. Testes usam `t.TempDir()` — nunca o `data/state.json` do aluno.
 
 Demo manual isolada (não use o `data/state.json` do aluno; `DATA_PATH` temporário + porta livre):
 
